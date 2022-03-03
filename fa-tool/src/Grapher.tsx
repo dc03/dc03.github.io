@@ -11,6 +11,23 @@ const epsilon = "∊";
 
 class Automata {
     edges: Edge[] = [];
+    start: number = 0;
+    end: number = 0;
+
+    constructor(edges: Edge[], min: number, max: number) {
+        this.edges = edges;
+        this.start = min;
+        this.end = max;
+    }
+
+    connectWith(other: Automata): Automata {
+        const connected = new Automata(this.edges.concat(other.edges), this.start, other.end);
+        if (this.end != other.start) {
+            connected.edges.push(new Edge(new Node(this.end.toString()), epsilon, new Node(other.start.toString())));
+        }
+
+        return connected;
+    }
 }
 
 export class Grapher {
@@ -19,7 +36,7 @@ export class Grapher {
 
     public constructor(ast: AST) {
         this.ast = ast;
-        this.count = 0;
+        this.count = 1;
     }
 
     private nextCount(): number {
@@ -46,50 +63,128 @@ export class Grapher {
         return (this.count + 1).toString();
     }
 
-    private makeBasicAutomata(value: string, count: number): Edge[] {
-        return [new Edge(new Node(count.toString()), value, new Node((count + 1).toString()))];
+    private makeEdgeTo(left: string, value: string, right: string): Edge {
+        return new Edge(new Node(left), value, new Node(right));
     }
 
-    private makeGroupAutomata(children: AST[]): Edge[] {
-        let edges: Edge[] = [];
-        return edges;
+    private epsilonEdgeTo(left: string, right: string): Edge {
+        return this.makeEdgeTo(left, epsilon, right);
     }
 
-    private makeSelectAutomata(children: AST[]): Edge[] {
+    private makeBasicAutomata(value: string): Automata {
         let edges: Edge[] = [];
+        let min = this.peekCount();
+        for (const char of value) {
+            edges.push(this.makeEdgeTo(this.nextCountString(), char, this.nextCountString()));
+        }
+        let max = this.currentCount();
+        return new Automata(edges, min, max);
+    }
 
-        let base = this.nextCount();
-        let childValues: string[] = [];
+    private makeGroupAutomata(children: AST[]): Automata {
+        const min = this.currentCount();
+
+        let child_automatas: Automata[] = [];
         for (const child of children) {
-            edges.concat(this.makeBasicAutomata(child.value, this.count));
+            child_automatas.push(this.makeAutomataFrom(child));
         }
 
-        return edges;
+        // const max = this.currentCount();
+        let group = new Automata([], min, min);
+        for (const child of child_automatas) {
+            group = group.connectWith(child);
+        }
+
+        return group;
     }
 
-    private makeEdgesFrom(child: AST): Edge[] {
+    private makeSelectAutomata(children: AST[]): Automata {
+        let edges: Edge[] = [];
+
+        const min = this.currentCount();
+        let childValues: string[] = [];
+        for (const child of children) {
+            const automata = this.makeBasicAutomata(child.value);
+            edges.push(...automata.edges);
+            if (min != automata.start) {
+                edges.push(this.epsilonEdgeTo(min.toString(), automata.start.toString()));
+            }
+            childValues.push(automata.end.toString());
+        }
+
+        const max = this.nextCount();
+        for (const val of childValues) {
+            if (val != max.toString()) {
+                edges.push(this.epsilonEdgeTo(val, max.toString()));
+            }
+        }
+
+        return new Automata(edges, min, max);
+    }
+
+    private makeOrAutomata(children: AST[]): Automata {
+        let edges: Edge[] = [];
+        const min = this.currentCount();
+
+        let childValues: string[] = [];
+        for (const child of children) {
+            const automata = this.makeAutomataFrom(child);
+            edges.push(...automata.edges);
+            if (min != automata.start) {
+                edges.push(this.epsilonEdgeTo(min.toString(), automata.start.toString()));
+            }
+            childValues.push(automata.end.toString());
+        }
+
+        const max = this.nextCount();
+        for (const val of childValues) {
+            if (val != max.toString()) {
+                edges.push(this.epsilonEdgeTo(val, max.toString()));
+            }
+        }
+
+        return new Automata(edges, min, max);
+    }
+
+    private makeAutomataFrom(child: AST): Automata {
         if (child.type == NodeType.Basic) {
-            return this.makeBasicAutomata(child.value, this.nextCount());
+            return this.makeBasicAutomata(child.value);
         } else if (child.type == NodeType.Group) {
             return this.makeGroupAutomata(child.children);
         } else if (child.type == NodeType.Select) {
             return this.makeSelectAutomata(child.children);
+        } else if (child.type == NodeType.Or) {
+            return this.makeOrAutomata(child.children);
         }
 
-        throw "";
+        throw "cheese";
     }
 
     public toGraph(): Graph {
         if (this.ast.type != NodeType.Root) {
             throw new GraphError("<root> type not NodeType.Root");
         } else {
-            let edges: Edge[] = [new Edge(new Node("start"), epsilon, new Node(this.peekCountString()))];
-            for (const child of this.ast.children) {
-                edges = edges.concat(this.makeEdgesFrom(child));
-            }
-            edges.push(new Edge(new Node(this.peekCountString()), epsilon, new Node("end")));
+            let children: Automata[] = [];
+            const min = this.currentCount();
 
-            return new Graph(edges);
+            for (const child of this.ast.children) {
+                children.push(this.makeAutomataFrom(child));
+            }
+
+            children.sort((a, b) => a.start - b.start);
+
+            const max = this.currentCount();
+            let edges: Edge[] = [
+                this.epsilonEdgeTo("start", min.toString()),
+                this.epsilonEdgeTo(max.toString(), "end"),
+            ];
+
+            let root = new Automata(edges, min, min);
+            for (const child of children) {
+                root = root.connectWith(child);
+            }
+
+            return new Graph(root.edges);
         }
     }
 }

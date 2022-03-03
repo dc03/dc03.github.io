@@ -1,5 +1,6 @@
 export enum NodeType {
     Basic,
+    Concatenation,
     Group,
     None,
     Or,

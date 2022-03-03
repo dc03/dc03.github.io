@@ -1,6 +1,7 @@
 import { AST, NodeType } from "./RegexAST";
 
 enum ParsePrecedence {
+    NONE,
     OR,
     QUESTION,
     STAR,
@@ -41,19 +42,19 @@ export class Parser {
         this.addRule(
             (n) => this.alnum.test(n),
             (self) => self.basic(),
-            null,
+            (self, left) => new AST("", NodeType.Concatenation, [left, self.basic()]),
             ParsePrecedence.PRIMARY
         );
         this.addRule(
             (n) => n == "[",
             (self) => self.select(),
-            null,
+            (self, left) => new AST("", NodeType.Concatenation, [left, self.select()]),
             ParsePrecedence.SELECT
         );
         this.addRule(
             (n) => n == "(",
             (self) => self.group(),
-            null,
+            (self, left) => new AST("", NodeType.Concatenation, [left, self.group()]),
             ParsePrecedence.GROUP
         );
         this.addRule(
@@ -80,6 +81,7 @@ export class Parser {
             (self, left) => self.question(left),
             ParsePrecedence.QUESTION
         );
+        this.addRule((n) => /[\)\]\|\+\*\?]/.test(n), null, null, ParsePrecedence.NONE);
     }
 
     private consumeAlnum(): string {
@@ -110,15 +112,13 @@ export class Parser {
         return this.position >= this.input.length;
     }
 
-    private nextIsEnd(): boolean {
-        return this.position + 1 >= this.input.length;
-    }
-
     private advance(): string | null {
         if (this.isAtEnd()) {
             return null;
         } else {
-            return this.input.at(this.position++) ?? null;
+            this.position++;
+            console.log(`advance: ${this.input.at(this.position - 1)}`);
+            return this.input.at(this.position - 1) ?? null;
         }
     }
 
@@ -132,7 +132,7 @@ export class Parser {
     }
 
     private peek(): string | null {
-        return this.input.at(this.position + 1) ?? null;
+        return this.input.at(this.position) ?? null;
     }
 
     private peekMaybeThrow(): string {
@@ -184,7 +184,7 @@ export class Parser {
         if (this.position == 0) {
             throw new ParseError("Trying to get character before start of input");
         } else {
-            const char = this.input.at(this.position - 1);
+            let char = this.input.at(this.position - 1);
             if (char != null) {
                 return new AST(char, NodeType.Basic, []);
             } else {
@@ -196,7 +196,6 @@ export class Parser {
     private select(): AST {
         let contents: AST[] = [];
         while (!this.isAtEnd() && this.peekMaybeThrow() != "]") {
-            console.log(this.input[this.position]);
             this.consumeAlnum();
             contents.push(this.basic());
         }
@@ -209,17 +208,16 @@ export class Parser {
     private group(): AST {
         let contents: AST[] = [];
         while (!this.isAtEnd() && this.peekMaybeThrow() != ")") {
-            contents.push(this.regex());
+            contents.push(this.regex(ParsePrecedence.OR));
         }
 
-        console.log("Expected `)` at end of group");
         this.consume(")", "Expected `)` at end of group");
 
         return new AST("(", NodeType.Group, contents);
     }
 
     private or(left: AST): AST {
-        const right = this.regex();
+        const right = this.regex(ParsePrecedence.OR);
 
         return new AST("|", NodeType.Or, [left, right]);
     }
@@ -236,22 +234,22 @@ export class Parser {
         return new AST("?", NodeType.Question, [left]);
     }
 
-    private regex(): AST {
+    private regex(precedence: ParsePrecedence): AST {
         const next = this.advanceMaybeThrow();
         const rule = this.getRuleMaybeThrow(next);
-
-        console.log(rule);
 
         if (rule.prefix == null) {
             throw new ParseError(`'${next}' cannot occur at start of regex`);
         }
 
         let left = rule.prefix(this);
-        while (!this.nextIsEnd() && rule.precedence < this.getRuleMaybeThrow(this.peekMaybeThrow()).precedence) {
-            const infix = this.getRuleMaybeThrow(this.advanceMaybeThrow()).infix;
+
+        while (!this.isAtEnd() && precedence <= this.getRuleMaybeThrow(this.peekMaybeThrow()).precedence) {
+            const next_infix = this.advanceMaybeThrow();
+            const infix = this.getRuleMaybeThrow(next_infix).infix;
 
             if (infix == null) {
-                throw new ParseError(`'${next}' cannot occur as infix or postfix`);
+                throw new ParseError(`'${next_infix}' cannot occur as infix or postfix`);
             }
 
             left = infix(this, left);
@@ -260,11 +258,30 @@ export class Parser {
         return left;
     }
 
+    private collapseConcatenations(ast: AST) {
+        let new_children: AST[] = [];
+        for (const child of ast.children) {
+            this.collapseConcatenations(child);
+            if (child.type == NodeType.Concatenation) {
+                for (const child2 of child.children) {
+                    if (child2.type != NodeType.Concatenation) {
+                        new_children.push(child2);
+                    }
+                }
+            } else {
+                new_children.push(child);
+            }
+        }
+        ast.children = new_children;
+    }
+
     public parse(): AST {
         let root = new AST("<root>", NodeType.Root, []);
         while (!this.isAtEnd()) {
-            root.addChild(this.regex());
+            root.addChild(this.regex(ParsePrecedence.OR));
         }
+
+        this.collapseConcatenations(root);
 
         console.log(root);
         return root;
