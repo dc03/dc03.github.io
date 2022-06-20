@@ -56,3 +56,11 @@ body {
     align-self: center;
     width: 50%;
 }
+
+li {
+    padding-bottom: 1rem;
+}
+
+.content {
+    width: 100%;
+}
