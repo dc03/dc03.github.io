@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+        <meta name="description" content="" />
+        <meta name="keywords" content="" />
+        <link rel="stylesheet" href="../css/blog.css" />
+
+        <title>GSoC Week 1</title>
+    </head>
+
+    <body>
+        <div class="container" id="container">
+            <div class="header">
+                <div class="title">GSoC Week 1: Bugs Ahoy!</div>
+                <div class="date">20 June 2022</div>
+                <br />
+                <hr class="separator" />
+            </div>
+            <div class="links">
+                <a href="../index.html">home</a>
+                <a href="../blog/index.html">blogs</a>
+            </div>
+            <div class="content">
+                <p>This blog post is related to my <a href="https://summerofcode.withgoogle.com/programs/2022/projects/BrXiUNA2">GSoC 2022
+project</a>.
+<br>
+<p>
+In the past week, I worked mainly on <a href="https://github.com/enigma-dev/RadialGM/pull/230">trying to fix the "MSVC x86_64" CI</a>
+for RadialGM.
+<ul>
+<li>
+First, I updated the vcpkg "version" in the CI by updating the git commit hash that was being used. This fixed
+a bug where vcpkg was complaining about MSVC not being found, because the "windows-latest" VM in the Azure Pipelines CI
+had updated to use Visual Studio 2022 whereas the old version of vcpkg being used only supported Visual Studio versions
+upto 2019.
+</li>
+<li>
+After this, I decided to split up the MSVC CI into two separate pipelines, one for Visual Studio 2019 pinned at the
+"windows-2019" VM and another one using "windows-latest" currently at Visual Studio 2022.
+</li>
+<li>
+<p>
+I then shifted my focus to fix the errors that were occuring during the actual build. There were two of these, one being
+"qt5-multimedia" not being found and the other one being "fatal error LNK1107: invalid or corrupt file" when trying to
+link the protobuf library. In the case of the former, the fix was fairly straightforward, as it involved just adding
+"qt5-multimedia" as a dependency to be installed by vcpkg. It seems that this package was separated out of the main
+"qt5-base" or "qt5-tools" packages at some point.
+</p>
+<p>
+The second error was more complex, and it took some time to figure out. The issue that was happening was when linking
+"emake", the linker was trying to use "libprotobuf.dll" instead of "libprotobuf.lib", which did not work as linking
+only works with .lib files on windows. Me and @gfundies initially assumed that the error was coming either from our CMake
+config or the "FindProtobuf.cmake" script supplied by protobuf.
+<br><br>
+However, after exploring the various .cmake files used by ENIGMA and provided by protobuf, I could not see any
+issues in any of the files. After experimenting with some CMake command line definitions, I was able to get a fix to work
+on my VM by explicitly setting the "PROTOBUF_LIBRARY" flag to the path of "libprotobuf.lib".
+<br><br>
+This was not a very good fix however, as it was a temporary hack which could break if the .lib file changed its location,
+and it did not work when pushed to the CI anyways. The actual fix was a lot simpler: I changed the RadialGM "CMakeLists.txt"
+config from
+
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%"><span style="color: #008800; font-style: italic">#Find gRPC</span>
+find_package(<span style="color: #0000FF">gRPC</span> <span style="color: #0000FF">CONFIG</span> <span style="color: #0000FF">REQUIRED</span>)
+target_link_libraries(${EXE} <span style="color: #0000FF">PRIVATE</span> <span style="color: #0000FF">gRPC::gpr</span> <span style="color: #0000FF">gRPC::grpc</span> <span style="color: #0000FF">gRPC::grpc++</span>)
+
+<span style="color: #008800; font-style: italic"># Find Protobuf</span>
+include(<span style="color: #0000FF">FindProtobuf</span>)
+include_directories(${Protobuf_INCLUDE_DIRS})
+target_link_libraries(${EXE} <span style="color: #0000FF">PRIVATE</span> ${Protobuf_LIBRARIES})
+</pre></div>
+
+<br>
+to
+<br><br>
+
+<div style="background:s #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%"><span style="color: #008800; font-style: italic"># Find Protobuf</span>
+include(<span style="color: #0000FF">FindProtobuf</span>)
+include_directories(${Protobuf_INCLUDE_DIRS})
+target_link_libraries(${EXE} <span style="color: #0000FF">PRIVATE</span> ${Protobuf_LIBRARIES})
+
+<span style="color: #008800; font-style: italic">#Find gRPC</span>
+find_package(<span style="color: #0000FF">gRPC</span> <span style="color: #0000FF">CONFIG</span> <span style="color: #0000FF">REQUIRED</span>)
+target_link_libraries(${EXE} <span style="color: #0000FF">PRIVATE</span> <span style="color: #0000FF">gRPC::gpr</span> <span style="color: #0000FF">gRPC::grpc</span> <span style="color: #0000FF">gRPC::grpc++</span>)
+</pre></div>
+
+<br>
+i.e. I swapped the order of inclusion of gRPC and protobuf and it fixed the error. It seems that gRPC sets up protobuf
+in such a way that it is not able to detect the .lib files which are installed and instead falls back to the .dll files.
+</p>
+</li>
+<li>
+Currently, the Visual Studio 2019 CI is passing, however the Visual Studio 2022 CI is failing for a reason I do not know.
+Everything builds fine, however when executing the installation command ("cmake --install . --config MinSizeRel"), it seems
+that the "objdump" command fails on a file, which causes the whole build to fail. Based on the order of the output, it seems
+that it is failing on "pcre2-16.dll". However, there is no way to be sure of this as there is no output specifying the name
+of the file it failed on.
+</ul>
+</p>
+<p>
+I also <a href="https://github.com/enigma-dev/enigma-dev/pull/2304">worked on the DnD code generator</a> this week. After
+discussing with @R0bert, I learned that the reason the "__if__" variable was generated is for scoping using "with()"
+statements to work correctly.
+
+<div style="width:auto;overflow-x:scroll;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;">
+<pre>
+<span>[5:21 PM] R0bert: the reason it has to be done is because the if itself (aka "action_if") can be scoped with applies to</span>
+<span>[5:22 PM] R0bert: which means you have to run "if" inside "with"</span>
+<span>[5:22 PM] R0bert: because it don't you'd otherwise need to prepend "self." to all the var accesses inside the if statement</span>
+</pre>
+</div>
+
+<br>
+Thus, I rolled back
+my change which got rid of the "__if__" variable, and redid the "with()" scope generation code to use "who_name()"
+directly, which stores the name of the target which the action applies to.
+</p>
+<p>
+Therefore, when dealing with "if"/conditional actions (called question actions in GML), instead of just emitting
+
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%"><span style="color: #000080; font-weight: bold">if</span> (condition) body
+</pre></div>
+
+<br>
+we require code in the form of
+<br><br>
+
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%">{
+    __if__ = condition;
+    <span style="color: #000080; font-weight: bold">if</span> (condition)
+        body
+}
+</pre></div>
+
+<br>
+The problem with the current code generator was that it assumed all actions as a flat sequence, without considering the nesting
+that happens with a question action and its body (and an else-action if present). This caused an issue where there was no way to 
+know when to emit the closing curly brace for a given question action, as there was no way to know where the body of the question
+action ended in a flat sequence.
+</p>
+<p>
+I created two functions to fix this, "GetNextAction" and "Action2Code", whose names should be self-explanatory.
+<ul>
+<li>
+<p>
+The first function, "GetNextAction", takes as input the "std::vector&lt;buffer::resources::Action&gt;" which contains the list of actions to be
+converted into code and the current position in the vector, and returns two pointers pointing to the first and last element of
+the next action sub-sequence. This means that block actions (delimited by ACT_BEGIN and ACT_END) are considered as one action,
+and question actions can have their bodies handled too, by returning the last action in the body as the last element of the
+sub-sequence.
+</p>
+<p>
+This also requires coalescing ACT_ELSE (else-actions) with question actions. Without that, the following issue occurs:
+
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%">{
+    __if__ = condition;
+    <span style="color: #000080; font-weight: bold">if</span> (condition)
+         body
+}
+<span style="color: #000080; font-weight: bold">else</span>
+    body
+</pre></div>
+
+<br>
+As the else-action is considered separately from the question action, the question action generates the curly braces
+which causes a syntax error because of having an else without a previous if.
+<br><br>
+Less importantly, ACT_REPEATs (repeat-actions) also have the next action considered as their body, however I do not know
+how necessary that actually is.
+</p>
+</li>
+<li>
+The second function, "Action2Code", converts the given sub-sequence of actions to code. It simply copies the code that
+was there previously in "Actions2Code", with one change: when encountering a question action, it dispatches to the
+"Question2Code" action, which is responsible for making sure that the curly braces are emitted around the if-statement.
+</li>
+</ul>
+</p>
+<p>
+Along with that, I created a function "PushIfRequired". This is the system responsible for making sure that within
+nested actions, unnecessary "with()" statements are not generated in the form of
+
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%">with (obj_1) {
+    do_something();
+    with (obj_1)
+        do_something_else();
+}
+</pre></div>
+
+<br>
+where nested actions which both have "applies to" enabled and target the same object do not emit the same "with()" twice.
+<br><br>
+This is handled by using a "std::stack&lt;std::string&gt;", which stores the current object being targeted by the action
+we are currently in. If the stack is empty, it is equivalent to not having a target for the current action, which means
+targeting "self". If the object the current action is targetting is already on top of the stack, there is no need to
+emit a "with()" because the action we are within would already have emitted the "with()" to target that object if required.
+</p>
+<p>
+At the end of each action, if an object name was pushed onto the stack, it is popped off. This does mean that targets
+are only tracked within nested actions and not across a sequence of actions, as that would require a pre-processing step
+to clump together actions which target the same object, which would cost some processing time and would require more
+complex logic.
+</p>
+<p>
+I also created a test for the new code generation system, which runs with my PR but not with the current iteration of
+LGM. This test tests nested question actions, nested "applies to" and action-blocks delimited by ACT_BEGIN and ACT_END.
+</p>
+<p>
+In the coming week, I will be working mainly on the EDL parser along with its BNF file, and I will slowly
+start looking over the buffer functions and how they work as well. This will require a dicussion of endianness (for
+serialization and deserialization), and what binary floating point / complex format is to be used.
+</p>
+</p>
+            </div>
+            
+            <div class="goto-top links">
+                <a href="#container">go to top</a>
+            </div>
+            <br />
+            <hr class="finish-line" />
+        </div>
+    </body>
+</html>
