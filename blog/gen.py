@@ -37,7 +37,7 @@ def main():
                             title = contents["heading"]["PAGE_TITLE"]
                             blog_filename = (title + "_" + date.strftime("%Y_%m_%d")).replace(" ", "_") + ".html"
                             with open(blog_filename, "wt") as blog_file:
-                                blog_file.write(template.format(**contents["heading"], **contents["content"]))
+                                blog_file.write(template.format(**contents["heading"], **contents["content"], LINK=f"https://dc03.github.io/blog/{blog_filename}"))
                             list_of_files.append([date, contents["heading"]["BLOG_TITLE"], blog_filename])
 
         list_of_files.sort(key=lambda x: x[0], reverse=True)
