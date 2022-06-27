@@ -57,4 +57,9 @@ li {
     width: 100%;
 }
 
+code {
+    color: orange;
+    font-style: italic;
+}
+
 @import "main-post.css";
