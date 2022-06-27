@@ -1,6 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Fira+Mono&display=swap');
+@import "main-pre.css";
 
 body {
     display: flex;
@@ -15,7 +13,6 @@ body {
     /* border-right: 2px dashed black;
     border-left: 2px dashed black; */
     max-width: 1000px;
-    font-size: 1.5rem;
     font-family: "JetBrains Mono", "Fira Mono", "Courier New", Courier, monospace;
 }
 
@@ -27,14 +24,9 @@ h1 {
     width: 100%;
 }
 
-.title {
-    font-size: 2.0rem;
+.blog_title {
     padding-top: 1rem;
     padding-bottom: 0.5rem;
-}
-
-.date {
-    font-size: 1.5rem;
 }
 
 .separator {
@@ -60,3 +52,5 @@ h1 {
 .blog-link:hover, .links a:hover {
     color: #000b6a;
 }
+
+@import "main-post.css";

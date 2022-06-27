@@ -48,7 +48,7 @@ def main():
             index_template = index_template.read()
             format = """
                 <li class="blog">
-                    <div class="title">
+                    <div class="blog_title">
                         <a href="{BLOG_FILENAME}" class="blog-link">{BLOG_TITLE}</a>
                     </div>
                     <div class="date">{DATE}</div>
