@@ -71,8 +71,8 @@ In the first case, <code>callee()</code> is responsible for checking the upcomin
 token if required. In the second case, it only needs to check if the current token in the sequence needs to be consumed.
 </p>
 <p>
-Explained simply, what I had learned before a system based on acceptance, where the parser would accept the token only if
-it matched what it wanted. This system is based on rejection, where the parser can reject the next token and return to the
+Explained simply, what I had learned before was a system based on acceptance, where the parser would accept the token only if
+it matched what it wanted. This new system is based on rejection, where the parser can reject the next token and return to the
 caller if it is not what it wanted.
 </p>
 <p>
