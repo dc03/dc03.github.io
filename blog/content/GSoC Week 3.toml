@@ -23,14 +23,8 @@ These two functions are pretty simple:
 of bytes. For integers, the serialization is done in big endian form, where the most significant byte of the integer comes
 first in the stream, and the least significant byte comes last.
 <br><br>
-Unlike GMS, both <code>buffer_string</code> and <code>buffer_text</code> are treated as being equivalent, where both consist of a stream
-of characters terminated by a null terminator. In GMS, only <code>buffer_text</code> is null-terminated.
-</li>
-<li><code>deserialize_from_type()</code>: takes a <code>std::vector&lt;std::byte&gt;</code> and the type being converted
-to, and returns a <code>variant</code> containing the deserialized value. One interesting issue lies with integers: as
-all numeric values in ENIGMA are stored as <code>double</code>s, signed and unsigned integers have to be deserialized specially.
-<br><br>
-Before <a href="https://github.com/enigma-dev/enigma-dev/pull/2309/commits/2e83034865225044380b0bc60e07e5cb351e7873">commit #2e8303486</a>,
+There is also an interesting issue here: as all numeric values in ENIGMA are stored as <code>double</code>s, large values of signed and
+unsigned integers have to be deserialized specially. Before <a href="https://github.com/enigma-dev/enigma-dev/pull/2309/commits/2e83034865225044380b0bc60e07e5cb351e7873">commit #2e8303486</a>,
 the value stored in <code>rval.d</code> was converted to a signed integer, always. However, the problem lies in that when converting
 from a double to a signed integer, the top bit of the integer is reserved for the sign bit of the double. This causes an
 issue where unsigned values greater than the signed maximum value (which have the topmost bit set) get divided by half when
@@ -40,6 +34,13 @@ The fix is fairly straightforward: check if <code>rval.d</code> is greater than 
 to unsigned instead. This does not cause any issues, as <code>rval.d</code> will only be greater than the maximum value 
 if an unsigned value is stored, whereas a signed integer would wrap around to a negative value and then <code>rval.d</code>
 would be less than the maximum value.
+<br><br>
+Unlike GMS, both <code>buffer_string</code> and <code>buffer_text</code> are treated as being equivalent, where both consist of a stream
+of characters terminated by a null terminator. In GMS, only <code>buffer_text</code> is null-terminated.
+</li>
+<li><code>deserialize_from_type()</code>: takes a pair of <code>std::vector&lt;std::byte&gt;::iterator</code>s and the type being converted
+to, and returns a <code>variant</code> containing the deserialized value. Checks if the pair of iterators exactly represent
+the type being deserialized.
 </li>
 </ul>
 <p>
