@@ -90,13 +90,13 @@ In the first case, <code>callee()</code> is responsible for checking the upcomin
 token if required. In the second case, it only needs to check if the current token in the sequence needs to be consumed.
 </p>
 <p>
-Explained simply, what I had learned before a system based on acceptance, where the parser would accept the token only if
-it matched what it wanted. This system is based on rejection, where the parser can reject the next token and return to the
+Explained simply, what I had learned before was a system based on acceptance, where the parser would accept the token only if
+it matched what it wanted. This new system is based on rejection, where the parser can reject the next token and return to the
 caller if it is not what it wanted.
 </p>
 <p>
 The second system is simpler, because any parser only has to do one thing: move <code>token</code>
-forward. With the first system, it has to consider both the current token, and the next token, which is why there is a separation
+forward. With the first system, it has to consider both the current token and the next token, which is why there is a separation
 between <code>peek()</code> and <code>advance()</code>. This can lead to issues as it&#39;s possible to confuse <code>peek()</code>
 and <code>advance()</code>, and end up with a bug where they are interchanged.
 </p>

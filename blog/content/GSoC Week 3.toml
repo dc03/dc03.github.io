@@ -1,0 +1,213 @@
+[heading]
+PAGE_TITLE = "GSoC Week 3"
+BLOG_TITLE = "GSoC Week 3: Master Of Buffers"
+DATE = "4 July 2022"
+
+[content]
+CONTENT = '''
+This blog post is related to my <a href="https://summerofcode.withgoogle.com/programs/2022/projects/BrXiUNA2">GSoC 2022
+project</a>.
+<br>
+<p>
+This week, I worked on Part I of my GSoC project, i.e. the buffer functions. In this time I refactored most of the functions,
+and found out how to make them conform to how it works in GameMaker Studio (GMS).
+</p>
+<p>
+Firstly, to make serialization and deserialization of data more consistent and easy to refactor, I
+<a href="https://github.com/enigma-dev/enigma-dev/pull/2309/commits/24c252a196fbb4ede994dd635b19a50f53a11345">implemented two functions</a>
+to do the job: <code>serialize_to_type()</code> and <code>deserialize_from_type()</code>.
+<br><br>
+These two functions are pretty simple:
+<ul>
+<li><code>serialize_to_type()</code>: takes a <code>variant</code>, the type it is storing, and serializes it as a vector
+of bytes. For integers, the serialization is done in big endian form, where the most significant byte of the integer comes
+first in the stream, and the least significant byte comes last.
+<br><br>
+Unlike GMS, both <code>buffer_string</code> and <code>buffer_text</code> are treated as being equivalent, where both consist of a stream
+of characters terminated by a null terminator. In GMS, only <code>buffer_text</code> is null-terminated.
+</li>
+<li><code>deserialize_from_type()</code>: takes a <code>std::vector&lt;std::byte&gt;</code> and the type being converted
+to, and returns a <code>variant</code> containing the deserialized value. One interesting issue lies with integers: as
+all numeric values in ENIGMA are stored as <code>double</code>s, signed and unsigned integers have to be deserialized specially.
+<br><br>
+Before <a href="https://github.com/enigma-dev/enigma-dev/pull/2309/commits/2e83034865225044380b0bc60e07e5cb351e7873">commit #2e8303486</a>,
+the value stored in <code>rval.d</code> was converted to a signed integer, always. However, the problem lies in that when converting
+from a double to a signed integer, the top bit of the integer is reserved for the sign bit of the double. This causes an
+issue where unsigned values greater than the signed maximum value (which have the topmost bit set) get divided by half when
+converting to signed integers as that top bit is reserved for the sign bit.
+<br><br>
+The fix is fairly straightforward: check if <code>rval.d</code> is greater than the signed maximum value, and if so, convert
+to unsigned instead. This does not cause any issues, as <code>rval.d</code> will only be greater than the maximum value 
+if an unsigned value is stored, whereas a signed integer would wrap around to a negative value and then <code>rval.d</code>
+would be less than the maximum value.
+</li>
+</ul>
+<p>
+After this, I did some refactoring, where I renamed the macros <code>get_buffer</code> and <code>get_bufferr</code> to
+<code>GET_BUFFER</code> and <code>GET_BUFFER_R</code> respectively. These are the macros used to access buffers, and in
+debug mode, they are responsible for checking if the buffer being accessed actually exists. Then, I changed the global
+<code>enigma::buffers</code> variable to be a <code>AssetArray&lt;BinaryBufferAsset&gt;</code> instead of a
+<code>std::vector&lt;BinaryBuffer*&gt;</code>.
+<br><br>
+<code>AssetArray</code> is effectively to ENIGMA what <code>std::vector</code> is to the C++ standard library. It allows
+making a container of assets, which require three methods to be implemented:
+<ul>
+<li><span style="color:#F87A32;">getAssetTypeName()</span></li>
+<li><span style="color:#F87A32;">isDestroyed()</span></li>
+<li><span style="color:#F87A32;">destroy()</span></li>
+</ul>
+These methods make it possible to delete elements from the sequence without having to use the erase-remove idiom, which
+can be quite slow as it is O(n) in terms of time complexity. To implement these methods without changing the <code>BinaryBuffer</code>
+class, I created the <code>BinaryBufferAsset</code> class. This class simply wraps a <code>BinaryBuffer</code> inside a
+<code>std::unique_ptr</code>, and the methods manipulate the smart pointer. The <code>nullptr</code> value is considered
+as the <code>BinaryBuffer</code> within being "destroyed".
+</p>
+<p>
+I also gave types to three of the enums which are used for the bufer constants:
+<ul>
+<li><code>buffer_data_t</code>: this stores the various data types which the buffer can store, like <code>buffer_u8</code>,
+<code>buffer_u16</code>, <code>buffer_string</code> and so on.
+</li>
+<li><code>buffer_seek_t</code>: this stores the three ways in which a buffer's can seek to a position, namely <code>buffer_seek_start</code>,
+<code>buffer_seek_relative</code> and <code>buffer_seek_end</code>.
+</li>
+<li><code>buffer_type_t</code>: this stores the type of the buffer itself, i.e. how it behaves when it comes to accessing data
+and resizing itself. This enum consists of <code>buffer_grow</code>, <code>buffer_wrap</code>, <code>buffer_fixed</code> and
+<code>buffer_fast</code>. The constant <code>buffer_vbuffer</code> is currently not stored in this enum.
+</ul>
+Previously, all these values were just passed around as standard integers. The problem with this was that you could pass
+the wrong type of value to a function and there would be no error as the enum value would be implicitly cast to an int.
+In fact, it was possible to not even realize that there was an error, as the erroneous value could have had the same
+integer value as the correct type of value.
+</p>
+<p>
+After that, I added the ability to have sub-directories of tests within the <code>SimpleTests/</code> directory. Previously,
+the test harness would only check for directories ending with <code>.sog</code> in the top level directory. However, as I
+have decided to make the tests for each buffer function its own separate test, having it all in the main tests directory would
+lead to more crowding and would make it harder to navigate through the tests. Therefore, when the test harness finds a directory
+ending with the <code>.multi</code> extension, it considers all the directories within that directory as tests too. This means
+that I can group all the buffer tests, each of which begin with the "buffer_" prefix into the <code>buffers.multi</code>
+sub-directory.
+</p>
+<p>
+Finally, after having set all this up, I began work on the buffer functions themselves. The problems here did not come from
+the implementation being complex (in fact the functions are quite trivial in terms of functionality), they came from wanting
+to conform with how GMS works so that transitioning from it to ENIGMA would be easier.
+<br><br>
+So, a quick changelog of each function:
+<ul>
+<li><span style="color:#F87A32;">buffer_exists()</span>: no noteworthy changes
+</li>
+<li><span style="color:#F87A32;">buffer_create()</span>: refactor into a call to <code>make_new_buffer</code>, which deals with <code>AssetArray</code>
+</li>
+<li><span style="color:#F87A32;">buffer_delete()</span>: use <code>AssetArray</code>'s "destroy()" method
+</li>
+<li><span style="color:#F87A32;">buffer_read()</span>: align to buffer's alignment before reading
+</li>
+<li><span style="color:#F87A32;">buffer_write()</span>: align to buffer's alignment before writing
+</li>
+<li><span style="color:#F87A32;">buffer_fill()</span>: make it not completely broken, align to buffer's alignment before writing
+</li>
+<li><span style="color:#F87A32;">buffer_seek()</span>: seek to <code>GetSize() - 1 + offset</code> when using <code>buffer_seek_end</code>
+</li>
+<li><span style="color:#F87A32;">buffer_tell()</span>: no noteworthy changes
+</li>
+<li><span style="color:#F87A32;">buffer_peek()</span>: use <code>deserialize_from_type</code>, read integral types as <code>double</code> instead of <code>long</code>
+</li>
+<li><span style="color:#F87A32;">buffer_poke()</span>: add flag to control automatic resizing of <code>buffer_grow</code>, refactor into a call to <code>write_to_buffer()</code>
+</li>
+<li><span style="color:#F87A32;">buffer_load()</span>: make it not completely broken, switch to a call to <code>std::transform</code> instead of <code>std::ifstream::read</code>
+</li>
+<li><span style="color:#F87A32;">buffer_load_ext()</span>:  switch to a call to <code>std::transform</code> instead of <code>std::ifstream::read</code>, refactor into a call to <code>write_to_buffer()</code>
+</li>
+<li><span style="color:#F87A32;">buffer_get_type()</span>: no noteworthy changes
+</li>
+<li><span style="color:#F87A32;">buffer_get_alignment()</span>: no noteworthy changes
+</li>
+<li><span style="color:#F87A32;">buffer_get_address()</span>: no noteworthy changes
+</li>
+<li><span style="color:#F87A32;">buffer_get_size()</span>: no noteworthy changes
+</li>
+<li><span style="color:#F87A32;">buffer_resize()</span>: no noteworthy changes
+</li>
+<li><span style="color:#F87A32;">buffer_sizeof()</span>: no noteworthy changes
+</li>
+</ul>
+Out of all of these, <code>buffer_fill()</code> has caused the most pain till now. While not really difficult to implement,
+getting it to conform (mostly) with GMS's implementation was not fun. In fact, I have had 6 commits till now, updating it
+whenever I find a new edge case and test it in GMS to make sure my implementation conforms properly.
+<br><br>
+I think the reason that I have been having these issues is mainly because of buffer alignment and how I think about it
+versus how GMS thinks about it. Initially, I implemented buffer alignment by adding padding bytes after the written data,
+so that the next element being written was always aligned.
+<br><br>
+What is interesting is that GMS does the opposite: it writes
+padding bytes until the data being written would be aligned, and only then does it write the data itself. This means that
+instead of writing padding for the next element, GMS writes padding for the current element. Logically, it makes more sense
+as it uses less space, however it was confusing when I first encountered it when seeing <code>buffer_fill()</code> not write
+zeroes after it wrote data to a buffer.
+<br><br>
+I have tried to validate the way these functions work as much as I can, by running GMS inside a Windows VM to test how the
+reference implementation works, and also by writing as many tests as I can under the <code>buffers.multi</code> group. Hopefully,
+these tests cover enough edge cases so that the buffer functions work properly in normal use. The functions currently remaining
+for refactoring are:
+<ul>
+<li><span style="color:#F87A32;">buffer_save()</span></li>
+<li><span style="color:#F87A32;">buffer_save_ext()</span></li>
+<li><span style="color:#F87A32;">buffer_copy()</span></li>
+<li><span style="color:#F87A32;">buffer_get_surface()</span></li>
+<li><span style="color:#F87A32;">buffer_set_surface()</span></li>
+</ul>
+The functions currently not implemented at all are:
+<ul>
+<li><span style="color:#F87A32;">buffer_create_from_vertex_buffer()</span></li>
+<li><span style="color:#F87A32;">buffer_create_from_vertex_buffer_ext()</span></li>
+<li><span style="color:#F87A32;">buffer_save_async()</span></li>
+<li><span style="color:#F87A32;">buffer_load_async()</span></li>
+<li><span style="color:#F87A32;">buffer_load_partial()</span></li>
+<li><span style="color:#F87A32;">buffer_compress()</span></li>
+<li><span style="color:#F87A32;">buffer_decompress()</span></li>
+<li><span style="color:#F87A32;">buffer_async_group_begin()</span></li>
+<li><span style="color:#F87A32;">buffer_async_group_option()</span></li>
+<li><span style="color:#F87A32;">buffer_async_group_end()</span></li>
+<li><span style="color:#F87A32;">buffer_copy_from_vertex_buffer()</span></li>
+<li><span style="color:#F87A32;">buffer_md5()</span></li>
+<li><span style="color:#F87A32;">buffer_sha1()</span></li>
+<li><span style="color:#F87A32;">buffer_crc32()</span></li>
+<li><span style="color:#F87A32;">buffer_base64_encode()</span></li>
+<li><span style="color:#F87A32;">buffer_base64_decode()</span></li>
+<li><span style="color:#F87A32;">buffer_base64_decode_ext()</span></li>
+<li><span style="color:#F87A32;">buffer_set_used_size()</span></li>
+</ul>
+Of these, the ones I will definitely implement are:
+<ul>
+<li><span style="color:#F87A32;">buffer_compress()</span></li>
+<li><span style="color:#F87A32;">buffer_decompress()</span></li>
+<li><span style="color:#F87A32;">buffer_md5()</span></li>
+<li><span style="color:#F87A32;">buffer_sha1()</span></li>
+<li><span style="color:#F87A32;">buffer_crc32()</span></li>
+<li><span style="color:#F87A32;">buffer_base64_encode()</span></li>
+<li><span style="color:#F87A32;">buffer_base64_decode()</span></li>
+<li><span style="color:#F87A32;">buffer_base64_decode_ext()</span></li>
+</ul>
+I am also interested in <code>buffer_load_partial()</code> and <code>buffer_set_used_size()</code>. Hopefully, I can finish
+these functions this week, and get back to working on the EDL parser, so that I can have as much time as possible to work on
+Part II of my GSoC project before college begins.
+</p>
+<p><b>Incompatibilities with GMS</b>:
+<ul>
+<li><code>buffer_text</code>: not null-terminated, considered equivalent to <code>buffer_string</code>
+</li>
+<li><code>buffer_grow</code>: GMS resizes by multiplying previous size by 2, ENIGMA resizes by adding +1 to previous size
+</li>
+<li><code>buffer_get_size()</code>: GMS does not store any extra bytes, ENIGMA always has an extra byte at the end where
+the next byte will be written because of how <code>BinaryBuffer::Seek()</code> works
+</li>
+<li><code>buffer_poke()</code>: resizes <code>buffer_grow</code> when <code>resize</code> flag passed
+</li>
+<li><code>buffer_save()</code>: saves the whole buffer, instead of GMS which seems to only save the buffer up to the point
+where the last byte was written
+</li>
+</ul>
+</p>
+'''

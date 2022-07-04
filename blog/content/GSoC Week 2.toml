@@ -77,7 +77,7 @@ caller if it is not what it wanted.
 </p>
 <p>
 The second system is simpler, because any parser only has to do one thing: move <code>token</code>
-forward. With the first system, it has to consider both the current token, and the next token, which is why there is a separation
+forward. With the first system, it has to consider both the current token and the next token, which is why there is a separation
 between <code>peek()</code> and <code>advance()</code>. This can lead to issues as it&#39;s possible to confuse <code>peek()</code>
 and <code>advance()</code>, and end up with a bug where they are interchanged.
 </p>

@@ -60,8 +60,11 @@ li {
 }
 
 code {
-    color: orange;
+    /* color: #F87A32; */
     font-style: italic;
+    background-color: #eaeaea;
+    border-radius: 7px;
+    padding: 4px;
 }
 
 .embed {
