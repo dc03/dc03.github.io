@@ -1,0 +1,215 @@
+[heading]
+PAGE_TITLE = "GSoC Week 4"
+BLOG_TITLE = "GSoC Week 4: Buffer, buffer on the wall, who's the fairest of them all?"
+DATE = "11 July 2022"
+
+[content]
+CONTENT = '''
+This blog post is related to my <a href="https://summerofcode.withgoogle.com/programs/2022/projects/BrXiUNA2">GSoC 2022
+project</a>.
+<br>
+<p>
+In the previous week, I worked on finishing up the functions which I <a href="https://dc03.github.io/blog/GSoC_Week_3_2022_07_04.html">covered</a>
+in last week's writeup. These included functions for saving buffers, copying them, calculating checksums, compression /
+decompression and encoding.
+</p>
+<p>
+<code>buffer_copy</code>, <code>buffer_save</code> and <code>buffer_save_ext</code> are pretty mundane functions, and
+they work pretty intuitively.
+<ul>
+<li><code>buffer_copy</code> takes two buffers, offsets into them, and the number of bytes to write. If either of the
+buffers are <code>buffer_wrap</code>, it wraps around whenever required. With <code>buffer_grow</code>, it expands only
+the destination buffer if required, and truncates the number of bytes written if it goes past the source buffer end. In the case
+of <code>buffer_fixed</code> and <code>buffer_fast</code>, it does the same, except it does not expand the destination buffer.
+</li>
+<li><code>buffer_save</code> takes a buffer, and a file name to write to. Just does a byte-by-byte write to the file.
+</li>
+<li><code>buffer_save_ext</code> takes a buffer, an offset into it, and a file to write to. It truncates the number of bytes
+written if it goes off of the end of the buffer (even in <code>buffer_wrap</code>'s case), however it also wraps around the
+offset if the buffer is <code>buffer_wrap</code>.
+</li>
+</ul>
+Both the buffer save functions truncate the file on writing, i.e. the previous contents of the file are cleared
+before writing to it. One interesting optimization that comes into effect here is using the native <code>std::ofstream::write</code>
+function versus using <code>std::transform</code> with a <code>std::ofstreambuf_iterator</code>. The problem lies in the
+buffers being a <code>std::vector&lt;std::byte&gt;</code>, whereas the file writing functions expect a stream of <code>const char *</code>.
+<br><br>
+With <code>std::ofstream::write</code>, the code looks like this:
+<br><br>
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%">file.write(<span style="color: #000080; font-weight: bold">reinterpret_cast</span><<span style="color: #000080; font-weight: bold">const</span> <span style="color: #000080; font-weight: bold">char</span> *>(bytes.data()), size);
+</pre></div>
+<br>
+With <code>std::transform</code>, the code looks like this:
+<br><br>
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%">std::transform(bytes.begin(), bytes.end(), std::ostreambuf_iterator<<span style="color: #000080; font-weight: bold">char</span>>(file),
+               [](std::byte b) { <span style="color: #000080; font-weight: bold">return</span> <span style="color: #000080; font-weight: bold">static_cast</span><<span style="color: #000080; font-weight: bold">char</span>>(b); });
+</pre></div>
+<br>
+where <code>file</code> is a <code>std::ofstream</code> and <code>bytes</code> is a <code>std::vector&lt;std::byte&gt;</code>.
+<br><br>
+With <code>std::transform</code>, which I would say is the idiomatic way to do things, the bytes are written one-by-one,
+which means that it will be harder to have fast batch writes and instead can lead to multiple writes being done at a 
+slower speed. Therefore, I made two functions, <code>write_to_file</code> and <code>read_from_file</code>, which do a
+<code>reinterpret_cast</code> before calling <code>std::ofstream::write</code> and <code>std::ifstream::read</code>.
+<br><br>
+While I have not benchmarked this, it should allow the filesystem or the kernel to schedule writes and reads more efficiently
+instead of one byte at a time. The only problem is that these functions are pretty unsafe as they take a pointer and a number
+of bytes, so there is no way to verify if there is any undefined behaviour in accessing unowned memory. It is up to the caller
+to ensure that everything is within the correct bounds.
+</p>
+<p>
+With these three functions done, I moved onto <code>buffer_base64_encode</code> and <code>buffer_base64_decode</code>,
+which are the functions which (again, pretty intuitively) handle encoding and decoding a buffer in the base64 format. For
+these functions, I wrote two functions to abstract the logic, <code>internal_buffer_base64_encode</code> and <code>internal_buffer_base64_decode</code>,
+though I do wonder how useful they really are given that they can just be inlined into the main functions. Anyways, 
+base64 encoding is quite interesting. Instead of being used for encrypting data or compressing it, base64 encoding is done
+to make sure that data can be transmitted across machines where the only guarantee is they all understand the ASCII encoding.
+<br><br>
+To do this, base64 considers the input sequence as sets of triplets of bytes (i.e. 24 bits) and converts them into quadruplets
+of 6-bit units. The reason 3 bytes are used is because 24 is the lowest common multiple of 8 bits and 6 bits, and the reason
+6-bit units are used is because the range of values that can be stored in 6 bits is 0 to 63, which means that each possible
+value can be mapped conveniently to 26 uppercase ASCII English characters, 26 lowercase ASCII English characters, 10 numeric
+ASCII digits and 2 extra characters (usually <code>+</code> and <code>/</code>). Then, these characters are written to a
+string and transmitted.
+<br><br>
+The mapping from bits to ASCII is exactly in the order described before:
+<ul>
+<li> 0: <code>A</code>, 1: <code>B</code>, ... 25: <code>Z</code> </li>
+<li> 26: <code>a</code>, 27: <code>b</code>, ... 51: <code>z</code> </li>
+<li> 52: <code>0</code>, 53: <code>1</code>, ... 61: <code>9</code> </li>
+<li> 62: <code>+</code>, 63: <code>/</code> </li>
+</ul>
+In case the size of the input is not a multiple of 3, two situations can occur:
+<ul>
+<li>One extra byte: The top 6 bits of the byte are used for the first ASCII character, and the lower 2 bits are used as
+the top two bits of the next character. Two equals signs (<code>=</code>) are written as padding characters.
+</li>
+<li>Two extra bytes: Doing the same thing as one extra byte, however in this case 3 characters are written as two bytes
+take up 16 bits which require at least 3 6-bit units. An extra equals sign is written as the padding character.
+</ul>
+Examples for each case:
+<br><br>
+<table>
+    <tr>
+        <td>input</td><td colspan='8'>s</td><td colspan='8'>t</td><td colspan='8'>r</td>
+    </tr>
+    <tr>
+        <td>decimal</td><td colspan='8'>115</td><td colspan='8'>116</td><td colspan='8'>114</td>
+    </tr>
+    <tr>
+        <td>bits</td><td>0</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>1</td><td>1</td><td>0</td><td>1</td><td>1</td><td>1</td><td>0</td><td>1</td><td>0</td><td>0</td><td>0</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>1</td><td>0</td>
+    </tr>
+    <tr>
+        <td>decimal</td><td colspan='6'>28</td><td colspan='6'>55</td><td colspan='6'>17</td><td colspan='6'>50</td>
+    </tr>
+    <tr>
+        <td>output</td><td colspan='6'>c</td><td colspan='6'>3</td><td colspan='6'>R</td><td colspan='6'>y</td>
+    </tr>
+</table>
+<br>
+<table>
+    <tr>
+        <td>input</td><td colspan='8'>s</td><td colspan='8'>t</td>
+    </tr>
+    <tr>
+        <td>decimal</td><td colspan='8'>115</td><td colspan='8'>116</td>
+    </tr>
+    <tr>
+        <td>bits</td><td>0</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>1</td><td>1</td><td>0</td><td>1</td><td>1</td><td>1</td><td>0</td><td>1</td><td>0</td><td>0</td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td>
+    </tr>
+    <tr>
+        <td>decimal</td><td colspan='6'>28</td><td colspan='6'>55</td><td colspan='6'>16</td><td colspan='6'>0</td>
+    </tr>
+    <tr>
+        <td>output</td><td colspan='6'>c</td><td colspan='6'>3</td><td colspan='6'>Q</td><td colspan='6'>=</td>
+    </tr>
+</table>
+<br>
+<table>
+    <tr>
+        <td>input</td><td colspan='8'>s</td>
+    </tr>
+    <tr>
+        <td>decimal</td><td colspan='8'>115</td>
+    </tr>
+    <tr>
+        <td>bits</td><td>0</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>1</td><td>1</td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td><td><span style='color: gray'>0</span></td>
+    </tr>
+    <tr>
+        <td>decimal</td><td colspan='6'>28</td><td colspan='6'>48</td><td colspan='6'>0</td><td colspan='6'>0</td>
+    </tr>
+    <tr>
+        <td>output</td><td colspan='6'>c</td><td colspan='6'>w</td><td colspan='6'>=</td><td colspan='6'>=</td>
+    </tr>
+</table>
+<br>
+During decoding, the exact reverse is done: each group of 4 6-bit units is converted into a triplet of bytes, using the
+inverse of the mapping described above. Note that the padding character (<code>=</code>) is considered to map to the value
+0.
+<br><br>
+It is also possible that the stream is not properly terminated with padding characters, in which case the string may
+have 2 or 3 extra characters at the end. It is not possible for a stream to have only one extra character, as each byte
+maps to at least 2 base64 characters (8 bits requires at least 12 bits, i.e. 2 6-bit units).
+<br><br>
+With these done, I moved onto CRC-32. This is very straightforward, just using the <code>crc32()</code> function from
+the zlib library which is a dependency of ENIGMA. One problem is, however, that the generator polynomial that zlib uses
+for its crc32 calculation is different from the one used by GameMaker Studio, so I have no way of knowing how the one in
+GMS behaves. I have tried to approximate what I think makes sense, wrapping the offset with <code>buffer_wrap</code> and
+truncating the write when it goes off of the buffer end.
+<br><br>
+Also using zlib, I implemented <code>buffer_compress</code> and <code>buffer_decompress</code>, using the standard
+<code>Z_DEFAULT_COMPRESSION</code> mode which is also used by GMS. Both of these functions compress / decompress chunks
+of 16k of data at a time. 
+</p>
+<p>
+I then implemented the MD5 and SHA1 checksum functions, <code>buffer_md5</code> and <code>buffer_sha1</code>. Unlike before,
+these functions do not wrap the offset when using <code>buffer_wrap</code>, they instead return the checksums for an empty
+stream. The problem with these functions lay in whether to add a dependency or not. OpenSSL is too large to be used for 
+just 2 functions, and while the Boost libraries do have these functions, they are part of the internal workings thus their
+API is not stable. The same issue arose with other libraries, where along with adding another dependency, there would also
+have to be licence considerations.
+<br><br>
+Therefore, I decided to use the reference implementations from the RFCs for the MD5 and SHA1 algorithms. This way, there
+would be no issues with having to add additional licenses for third party code. While the SHA1 code was pretty easy to integrate,
+the MD5 code was so old it used ANSI C style function declarations, where the types of parameters were specified separately
+from the names of the parameters. It also had a macro <code>PROTO_LIST</code>, where it would not emit function parameters
+if the compiler being used did not support them. So, I modernized the code a little, using fixed width integer types both
+in the MD5 and SHA1 code, and "modern" function declarations.
+</p>
+<p>
+<code>buffer_get_surface</code> and <code>buffer_set_surface</code> are pretty simple. The former copies a surface's texture
+data to a buffer, and the latter does the opposite, writing a buffer to a surface's texture. Simply put, a surface is
+an area which can be drawn on, like the viewport which the user sees on their monitor. Each pixel's color value is stored
+in ENIGMA using the BGRA format where 1 byte is used for each component, which means 4 bytes are required per pixel.
+</p>
+<p>
+<code>buffer_load_partial</code> is also quite straightforward, abort if the file offset is greater than the file size,
+truncate if the bytes being read go beyond the end of the file, grow the destination buffer if it is <code>buffer_grow</code>,
+and wrap the offset for <code>buffer_wrap</code>. Finally, I implemented some string functions (at the request of @R0bert)
+using the MD5 and SHA1 implementations I had used. These are:
+<ul>
+<li><code>md5_string_utf8</code></li>
+<li><code>md5_string_unicode</code></li>
+<li><code>md5_file</code></li>
+<li><code>sha1_string_utf8</code></li>
+<li><code>sha1_string_unicode</code></li>
+<li><code>sha1_file</code></li>
+</ul>
+These functions are very straightforward too, just calculating the checksums of the strings or the files passed to them.
+With the <code>_unicode</code> functions, the string is considered to be in the UTF-16LE (little endian) format, and is
+first converted into a byte stream before its checksum is calculated.
+</p>
+<p>
+Now that the only thing that remains in Part I of my project is documenting the buffer functions, I will shift my focus back to the EDL compiler.
+I have already worked on <a href="https://docs.google.com/document/d/1Y03zEiztiV-XhSAJxm0pH7_13dGgS5_nFzLXX7AV_5A/edit?usp=sharing">finishing
+the BNF grammar</a> for EDL, and am coordinating with @Josh on finishing up the parser implementation. Therefore, I
+will work on the EDL parser this week, and also try finishing up the buffer functions documentation using doxygen comments
+in the <code>buffers.h</code> header file, as the enigma wiki seems to be in a non-functional state currently.
+</p>
+<p><b>Incompatibilities with GMS</b>:
+<ul>
+<li><code>buffer_crc32</code>: different generator polynomial, maybe different behaviour
+</li>
+</ul>
+</p>
+'''

@@ -61,7 +61,8 @@ li {
 
 code {
     /* color: #F87A32; */
-    font-style: italic;
+    /* font-style: italic; */
+    font-family: "IBM Plex Mono", "Fira Mono", 'Courier New', Courier, monospace;
     background-color: #eaeaea;
     border-radius: 7px;
     padding: 4px;
@@ -77,6 +78,16 @@ code {
     display: flex;
     flex-direction: column;
     padding-top: 1rem;
+}
+
+td {
+    border: 2px solid black;
+    text-align: center;
+    padding: 0.5rem;
+}
+
+tr {
+    margin: 2px;
 }
 
 @import "main-post.css";
