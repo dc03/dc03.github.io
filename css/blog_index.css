@@ -1,4 +1,5 @@
 @import "main-pre.css";
+@import "blog-pre.css";
 
 body {
     display: flex;

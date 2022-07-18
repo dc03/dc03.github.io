@@ -1,0 +1,128 @@
+[heading]
+PAGE_TITLE = "GSoC Week 5"
+BLOG_TITLE = "GSoC Week 5: What is <code>full_type</code>? Oh, grammar don't hurt me, no more"
+DATE = "18 July 2022"
+
+[content]
+CONTENT = '''
+This blog post is related to my <a href="https://summerofcode.withgoogle.com/programs/2022/projects/BrXiUNA2">GSoC 2022
+project</a>.
+<br>
+<p>
+In the previous week, I finished up Part I of my GSoC project, and began work on the preparation for Part II, where me and
+@Josh redo the EDL compiler.
+</p>
+<p>
+There were a few small nags remaining in the buffer functions, relating to incorrect calculations of truncated byte counts
+and out-of-bounds access in a few functions. After fixing these, I wrote up documentation for most of the buffer functions,
+except for <code>game_load_buffer</code> and <code>game_save_buffer</code> as these are not done yet.
+<br><br>
+As the wiki is still not working, I had to resort to writing the documentation in the form of <a href="https://github.com/enigma-dev/enigma-dev/pull/2309/commits/67dd8dccf015a006f2fc8fa44408078f484309e5">doxygen comments</a>
+for the functions declared in <code>buffer.h</code>. If the wiki does get fixed, moving these docs to it will be quite trivial,
+as it will just be a matter of copying them from the source and pasting them into the wiki.
+<br><br>
+As it stands currently, the <a href="https://github.com/enigma-dev/enigma-dev/pull/2309">Part I pull request</a> is ready
+for reviews and merging, with tests written for pretty much all the functions. This ends Part I of my GSoC project.
+</p>
+<p>
+After this, I started work on the EDL compiler again to finish up parsing declarations, which was much trickier than I
+expected. I <a href="https://github.com/enigma-dev/enigma-dev/pull/2310/">created a pull request</a> to track my progress
+with regards to parsers being finished for expressions, statements and declarations. Till now, expression parsing is mostly
+done, with a few expressions which depend on type parsers (like cast, <code>sizeof</code> and <code>new</code> expressions) remaining.
+Statement parsing is also mostly done, with everything except for the <code>for</code>-loop, <code>switch</code>-statement
+and block-statement remaining. As the for-loop can be somewhat ambiguous to parse, I have left it to be looked at later.
+I have not done switch statements mainly because I forgot about them and block statements rely on the declaration parser
+which is not yet complete.
+</p>
+<p>
+Unfortunately, much of my time this week was spent on trying to understand how the declaration grammar works, and also how
+JDI implements parsing it as the EDL compiler will use it's <code>full_type</code> class to represent parsed types. Thus,
+I was not really able to commit a lot of useful code to my PR.
+<br><br>
+The problem comes mainly from how the type specifier / declarator grammar is structured, which leads to immediate confusion
+from how many different nested rules there are and doubts about how to parse it because so many of those rules begin with
+the same tokens, and only differ when you have parsed them halfway. So, simply put, declarations work like so:
+<ul>
+<li> Any declaration consists of a sequence of type specifiers and then a sequence of comma-separated declarators, each 
+of which may optionally be followed by an initializer.
+</li>
+<li> A type specifier can be a type name (something built in like <code>int</code> or user-defined like <code>foo</code>),
+a modifier (<code>const</code>, <code>signed</code>, <code>short</code> etc.), a template type (an identifier followed by
+angle brackets containing template arguments) or a nested name (something followed by '::').
+</li>
+<li> A declarator effectively declares the syntax with which a variable is supposed to be used. For instance, a pointer
+is prefixed with <code>*</code> in it's declarator because to use a pointer you have to dereference it using the <code>*</code>
+operator. There are two different kinds of declarators: abstract and... non-abstract? Abstract declarators do not name any
+variable, whereas non-abstract ones do. The non-abstract declarators are used in declarations, as they obviously have to
+declare a variable.
+<br><br>
+This design comes from C, where Dennis Ritchie had the idea of declarations mirroring usage. This design over time has led to many
+generations of programmers scratching their heads about which <code>*</code> and which parentheses go where, and modern
+languages like Rust and Go have done away with this archaic system entirely. However, as EDL is supposed to be a gentle
+introduction to C++, we use this syntax.
+</li>
+<li> Initializers are really simple: an equals sign ('=') followed by an expression or a <code>()</code> / <code>{}</code> initializer.
+</ul>
+A few examples of declarations:
+<ul>
+<li>
+<code>const std::vector&lt;int&gt; x { 1, 2, 3, 4, 5 };</code>
+<br><br>
+<b>Type specifiers</b>: <code>const</code>, and <code>std::vector&lt;int&gt;</code> (nested name followed by template type)<br>
+<b>Declarators</b>: <code>x</code><br>
+<b>Initializer</b>: <code>{ 1, 2, 3, 4, 5, }</code><br><br>
+</li>
+<li>
+<code>const unsigned int **y = &foo;</code>
+<br><br>
+<b>Type specifiers:</b> <code>const</code>, <code>unsigned</code> and <code>int</code><br>
+<b>Declarators</b>: <code>**y</code><br>
+<b>Initializer</b>: <code>&foo</code><br><br>
+</li>
+<li>
+<code>float *x = nullptr, **const y = &bar, (Foo::*z)(int, int) = nullptr;</code>
+<br><br>
+<b>Type specifiers</b>: <code>float</code><br>
+<b>Declarators</b>: <code>*x</code>, <code>**const y</code>, <code>(Foo::*z)(int, int)</code> (Pointer to member function)<br>
+<b>Initializers</b>: <code>nullptr</code> and <code>&bar</code><br>
+</li>
+</ul>
+Examples of abstract declarators are just declarators without the names: <code>*</code> in place of <code>*x</code>,
+<code>**const</code> in place of <code>**const y</code> and <code>(Foo::*)(int, int)</code> in place of <code>(Foo::*z)(int, int)</code>.
+<br><br>
+The really tricky part comes mainly from two places: the <code>&lt;declarator&gt;</code> rule vs. the <code>&lt;abstract-declarator&gt;</code>
+rule, and the <code>&lt;qualified-id&gt;</code> rule vs. the <code>&lt;ptr-operator&gt;</code> rule. In the case
+of <code>&lt;declarator&gt;</code>, there is no way of knowing if we are parsing a normal declarator or an abstract one
+until we reach the identifier being declared. This causes issues when parsing function parameters, for example:
+<br><br>
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%"><span style="color: #000080; font-weight: bold">int</span> foo(<span style="color: #000080; font-weight: bold">int</span> **, <span style="color: #000080; font-weight: bold">float</span> *<span style="color: #000080; font-weight: bold">const</span> x);
+</pre></div>
+<br>
+Here the first parameter is an abstract declarator (consisting of <code>**</code>), and the second one is a non-abstract declarator,
+(consisting of <code>*const x</code>), however this information is only found out after parsing the declarator itself. The
+solution to this then lies in somehow merging the two rules to handle it as an abstract declarator optionally followed by
+a qualified or unqualified id, which is not really possible or worth doing in the grammar however might be possible in the
+parser source itself.
+<br><br>
+The story for <code>&lt;qualified-id&gt;</code> is similar, for example:
+<br><br>
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%"><span style="color: #000080; font-weight: bold">int</span> (foo::bar) = <span style="color: #0000FF">0</span>;
+<span style="color: #008800; font-style: italic">// versus</span>
+<span style="color: #000080; font-weight: bold">int</span> (foo::*bar) = nullptr;
+</pre></div>
+<br>
+In the first case, the declarator <code>(foo::bar)</code> comes under the qualified id rule (a nested name specifier followed
+by an identifer), whereas in the second case, the declarator <code>(foo::*bar)</code> comes under the pointer operator rule
+(a nested name specifier followed by <code>*</code>) followed by an identifier.
+<br><br>
+The problem here comes from the <code>&lt;ptr-operator&gt;</code> rule including an alternative <code>&lt;nested-name-specifier&gt; * &lt;cv-qualifier-seq&gt;?</code>,
+which clashes with the <code>&lt;nested-name-specifier&gt; &lt;unqualified-id&gt;</code> rule of <code>&lt;qualified-id&gt;</code>.
+To resolve this, it might be possible in both rules' parsers to see if a <code>*</code> follows the nested name specifier
+or not, and use that information to decide what rule to apply.
+</p>
+<p>
+Until this issue is resolved, I am spending time trying to figure out how to use <code>full_type</code> properly and seeing
+how the various <code>definition</code> types are used within JDI. I expect my output to start dropping somewhat now, as
+I head to college tomorrow and classes start the day after. Hopefully, by the end of this month, the parser issues are sorted
+out and I can work on Part II of my GSoC project.
+'''

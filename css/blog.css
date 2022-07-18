@@ -1,4 +1,5 @@
 @import "main-pre.css";
+@import "blog-pre.css";
 
 body {
     display: flex;
@@ -57,15 +58,6 @@ li {
 
 .content {
     width: 100%;
-}
-
-code {
-    /* color: #F87A32; */
-    /* font-style: italic; */
-    font-family: "IBM Plex Mono", "Fira Mono", 'Courier New', Courier, monospace;
-    background-color: #eaeaea;
-    border-radius: 7px;
-    padding: 4px;
 }
 
 .embed {
