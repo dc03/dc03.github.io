@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="description" content="" />
+        <meta name="keywords" content="" />
+        <link rel="stylesheet" href="../css/blog.css" />
+
+        <title>GSoC Week 6</title>
+    </head>
+
+    <body>
+        <div class="container" id="container">
+            <div class="header">
+                <div class="title">GSoC Week 6: More <code>full_type</code> shenanigans</div>
+                <div class="date">25 July 2022</div>
+                <br />
+                <hr class="separator" />
+            </div>
+            <div class="links">
+                <a href="../index.html">home</a>
+                <a href="../blog/index.html">blogs</a>
+            </div>
+            <div class="content">
+                <p>This blog post is related to my <a href="https://summerofcode.withgoogle.com/programs/2022/projects/BrXiUNA2">GSoC 2022
+project</a>.
+<br>
+<p>
+In the previous week, I worked on finishing up as much of the EDL parser as possible, after which I will be able to write
+passes to interpret the parsed code and then implement the <code>game_buffer_save</code> and <code>game_buffer_load</code>
+functions.
+</p>
+<p>
+There was not a very high quantity of code checked in this time, mainly due to my college classes starting leading to me
+having less time to do things, and parsing declarations being a new thing leading to me taking my time with interpreting
+things. The week was all about <code>full_type</code>, with regards to plumbing it through the whole type parser I wrote
+the week before the previous one. Most of the functions take a pointer to a <code>full_type</code>, and the only one which
+does not is <code>TryParseTypeID()</code> which returns a <code>full_type</code> instead.
+<br><br>
+The way <code>full_type</code> works is that it is divided into three parts:
+<ul>
+<li> The first part to store the <code>jdi::definition</code> which represents the rule <code>&lt;type-specifier-seq&gt;</code>
+</li>
+<li> The second part to store the <code>jdi::ref_stack</code> which represents the rule <code>&lt;declarator&gt;</code>
+</li>
+<li> The third part to store any modifiers such as <code>long</code>, <code>const</code> and <code>unsigned</code>
+</ul>
+Thus, a <code>full_type</code> wholly represents a variable declaration minus the initializer. After finishing the type
+specifier and declarator parsers, the only thing remaining was initializers, and they are pretty simple: there are three
+tokens which can start an initializer, equals (<code>=</code>), opening curly brace (<code>{</code>) and opening parenthesis
+(<code>(</code>).
+<ul>
+<li> An equals sign can be followed by an expression having the assignment operator's precedence.
+</li>
+<li> An opening curly brace can be followed by an (optionally designated) initializer list, which consists of initializer
+clauses (either brace initializers or assignment-precedence expressions followed by commas) followed by a closing curly brace.
+</li>
+<li> Much like brace initializers, an opening parenthesis can be followed by an initializer list, followed by a closing
+parenthesis.
+</li>
+</ul>
+Regarding last week's issue of similar prefixes for abstract and non-abstract declarators, the solution was quite simple:
+merge the two rules together, which led to me getting rid of the separate code path for abstract declarators entirely and
+led to three different options for declarator parsing:
+<ul>
+<li> <code>ABSTRACT</code>: The declarator definitely does not contain a qualified-id (type arguments to templates) </li>
+<li> <code>NON_ABSTRACT</code>: The declarator definitely contains a qualified-id (variable declarations) </li>
+<li> <code>MAYBE_ABSTRACT</code>: The declarator may or may not contain a qualified-id (function parameters) </li>
+</ul>
+With <code>&lt;qualified-id&gt;</code> and <code>&lt;ptr-operator&gt;</code>, the fix was also pretty trivial: make a
+new function <code>TryParseMaybeNestedPtrOperator</code>, which parses a nested name specifier until it maybe hits a <code>*</code>,
+in which case it treats it as a pointer to member declaration.
+</p>
+<p>
+After this, only function-parameter and template-argument parsers are left in declarators. I have put the framework in place
+to finish implementing them and the hold-up currently is the fact that <code>jdi::ref_stack::parameter</code> and <code>jdi::arg_key::aug_value</code>
+take a <code>jdi::AST</code> which is not compatible with a <code>enigma::parsing::AST</code>, so I cannot currently parse
+default values for function parameters or NTTP arguments for template parameters. There are two possible solutions to this:
+inherit from these two classes and modify them to take an EDL AST, or write methods to transform the EDL AST into a JDI
+AST. Of these, the latter is definitely much easier, as the former would require updating pretty much everything touching
+<code>jdi::full_type</code> or the classes that come under it.
+</p>
+<p>
+As it stands right now, I would estimate roughly 80% of the EDL parser is finished, with the remaining issues being nags
+to be discussed with @Josh. This week, I need to finish new-expressions, delete-expressions, temporary object initialization,
+block statements, switch statements and a few missing cases in declarators.
+<br><br>
+Temporary object initialization will be the hardest challenge of these, as the difference between them and a declarator
+cannot be established before parsing them, so we need an infinite amount of lookahead to be able to implement it. Consider the following:
+<br>
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%"><span style="color: #000080; font-weight: bold">int</span>(*(*a)[<span style="color: #0000FF">10</span>]) = nullptr;
+</pre></div>
+<br>
+and
+<br><br>
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%"><span style="color: #000080; font-weight: bold">int</span>(*(*a)[<span style="color: #0000FF">10</span>] + b);
+</pre></div>
+<br>
+These two are basically the same upto the <code>+</code> operator. Therefore, there is no way to know what rule we are
+parsing when we begin, which is an issue as the code paths for parsing types and temporary object initialization are vastly
+different. The only way to fix this is to pass everything to the type parser, and have it bail out with an <code>AST::Node</code>
+when it detects any token which can be an operator. This will be done by considering the declarator parsed upto now to be
+an expression, and use routines to convert it as such.
+</p>
+</p>
+            </div>
+            
+            <div class="goto-top links">
+                <a href="#container">go to top</a>
+            </div>
+            <br />
+            <div class="embed">
+                <span>GSoC Week 6: More <code>full_type</code> shenanigans</span>
+                <span>Dhruv Chawla</span>
+                <span>25 July 2022</span>
+                <span class="links"><a href="https://dc03.github.io/blog/GSoC_Week_6_2022_07_25.html">https://dc03.github.io/blog/GSoC_Week_6_2022_07_25.html</a></span>
+            </div>
+            <br />
+            <hr class="finish-line" />
+        </div>
+    </body>
+</html>
