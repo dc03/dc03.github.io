@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="description" content="" />
+        <meta name="keywords" content="" />
+        <link rel="stylesheet" href="../css/blog.css" />
+
+        <title>GSoC Week 7</title>
+    </head>
+
+    <body>
+        <div class="container" id="container">
+            <div class="header">
+                <div class="title">GSoC Week 7: 'Temporary Initialization' more like 'Permanent Pain'</div>
+                <div class="date">2 August 2022</div>
+                <br />
+                <hr class="separator" />
+            </div>
+            <div class="links">
+                <a href="../index.html">home</a>
+                <a href="../blog/index.html">blogs</a>
+            </div>
+            <div class="content">
+                <p>This blog post is related to my <a href="https://summerofcode.withgoogle.com/programs/2022/projects/BrXiUNA2">GSoC 2022
+project</a>.
+<br>
+<p>
+In the previous week, I worked on getting a new system for storing types into place and then using that system to implement
+temporary object initialization.
+</p>
+<p>
+The class I created for this purpose is <code>enigma::parsing::FullType</code>, which stores all the data necessary to
+represent a C++-style declaration, including the type specifier, the declarator, and any flags attached to the declaration.
+This class is mostly identical to the previous <code>jdi::full_type</code>, except that the way declarators are stored has
+been redone.
+<br><br>
+<code>jdi::full_type</code> uses the <code>jdi::ref_stack</code> class, which I found lacking for my purposes
+involving <code>const</code>/<code>volatile</code> pointers and nested declarators (i.e. <code>*(*x)</code>). In the case
+of the latter, the way <code>ref_stack</code> works is that the components (i.e. the <code>*</code>s, <code>&</code>s etc.)
+making up the nested declarator (the <code>**</code> in <code>*(**x)[10]</code>) are pushed onto the stack after the outer
+components are parsed. The design has been done this way so that dereferencing the stack involves just popping off the top
+component from the stack. Therefore, if we consider <code>*(**x)[10]</code>, the stack will look like the following:
+<br>
+<table>
+<tr>
+<th>Location</th><th>Type</th><th>Meaning</th><th>Component</th>
+</tr>
+<tr>
+<td>TOP -></td><td>RT_POINTERTO</td><td>pointer to object</td><td><code>*</code></td>
+</tr>
+<tr>
+<td></td><td>RT_POINTERTO</td><td>pointer to object</td><td><code>*</code></td>
+</tr>
+<tr>
+<td></td><td>RT_ARRAYBOUND</td><td>array bound, size=10</td><td><code>*</code></td>
+</tr>
+<tr>
+<td>BOTTOM -></td><td>RT_POINTERTO</td><td>pointer to object</td><td><code>*</code></td>
+</tr>
+</table>
+<br>
+While this system makes processing and generating the declarator easier, it does not preserve the previous structure
+of the declarator so there is no easy way to convert a declarator to an expression, which comes into play later on. In the
+new system that I designed, declarators instead of being a stack like before are instead an array consisting of "nodes"
+i.e. components. These components are stored under one main type (<code>DeclaratorNode</code>), and consist of the following
+types:
+<ul>
+<li><code>PointerNode</code> (representing <code>*</code> (pointer to object) and <code>::*</code> (pointer to member))</li>
+<li><code>ReferenceNode</code> (representing <code>&</code> (l-value reference) and <code>&&</code> (r-value or forwarding reference))</li>
+<li><code>ArrayBoundNode</code> (representing <code>[x]</code> (array bound size) where <code>x</code> is an arbitrary expression)</li>
+<li><code>FunctionParameterNode</code> (representing <code>(int y, ...)</code> (function parameters along with default values))</li>
+<li><code>NestedNode</code> (representing the <code>*x</code> in <code>*(*x)</code>)</li>
+</ul>
+In this system, instead of storing nested declarators after the outer components, they are
+stored before them under the special <code>NestedNode</code> class which stores a declarator inside itself. This also means
+that a <code>NestedNode</code> can store a <code>NestedNode</code> within itself, which means that arbitrarily nested declarators
+can be represented this way. Therefore, the structure of the declarator is preserved. For example, the previous <code>*(**x)[10]</code>
+will look like this:
+<br><br>
+<table>
+<tr>
+<th>Index</th><th>Type</th><th>Meaning</th><th>Component</th>
+</tr>
+<tr>
+<td>0</td><td>Kind::POINTER_TO</td><td>pointer to object</td><td><code>*</code></td>
+</tr>
+<tr>
+<td>1</td><td>Kind::NESTED (Kind::POINTER_TO -> Kind::POINTER_TO)</td><td>nested node (containing: pointer to object, pointer to object)</td><td><code>*</code></td>
+</tr>
+<tr>
+<td>2</td><td>Kind::ARRAY_BOUND</td><td>array bound, size=10</td><td><code>*</code></td>
+</tr>
+</table>
+<br>
+While this makes processing the declarator harder, it preserves the structure of it exactly so that reproducing it later
+on is easier. If the <code>jdi::ref_stack</code> semantics are required, there is a <code>to_jdi_refstack()</code> method
+defined so that conversion between the two is easier. Another reason this is required is to make storing default values of
+function parameters easier: the <code>jdi::ref_stack</code> class requires a <code>jdi::AST</code> to be stored for default
+values whereas EDL uses <code>enigma::parsing::AST</code>, so conversion functions would be required to convert the EDL 
+AST into a JDI AST.
+<br><br>
+However, the main reason for making this class, as noted above, was converting declarators to expressions. This has to be
+done as the parser I am writing tries to parse a declarator first, before bailing out when encountering an expression. For
+example, when parsing <code>int(*(*x + 4))</code>, upto the <code>+</code> operator, the input is treated as a declarator
+consisting of <code>*(*x)</code>. On encountering the <code>+</code>, it bails and tries to convert the previously parsed
+declarator to an expresion (in this case <code>*x</code>) then pass it as an argument to <code>TryParseExpression</code>
+which takes care of the rest. It then has to somehow signal to the outer (caller) declarator parser that this inner declarator
+is actually an expression, which requires storing expressions within the <code>DeclaratorNode</code> class created to store
+the declarator components.
+<br><br>
+Note, though, that this only requires changing two inner classes and not <code>DeclaratorNode</code> as a whole, these two
+being <code>NestedNode</code> and <code>FunctionParameterNode</code>, as these are the only two places in the declarator
+where expressions can occur. This is because the places where expressions can occur are:
+<ul>
+<li>Before the declarator itself, like in <code>int(++x)</code></li>
+<li>Within a parenthesised nested declarator, like in <code>int(*x + 4)</code></li>
+<li>After a parenthesised nested declarator, like in <code>int((*x) + 5)</code></li>
+<li>After a declarator, like in <code>int(foo::bar + 5)</code></li>
+<li>Within function arguments, like in <code>foo(int(*x + 5))</code></li>
+</ul>
+Therefore, the parser needs special cases to handle all of these possibilities. The first four cases are handled within
+<code>TryParseNoPtrDeclarator</code> and the last case is handled within <code>TryParseParametersAndQualifiers</code>. There
+is a little more code to handle what should happen if an expression is found when the inner declarator is not an expression
+however that is all the code needed to handle functional casts.
+</p>
+<p>
+The major downfall of this system is the inflicted complexity: it makes the code path for the <code>&lt;noptr-declarator&gt;</code>
+rule more complex and harder to read because the declarator and expression parsing code is combined into one. Before implementing
+this system, @Josh had talked about doing things differently: parse everything as an expression, and filter out whatever
+declarators appear within them.
+<br><br>
+At the time, I did not really understand this system, as I did not really understand
+that declarators themselves are generally expressions and I wanted to stick by the rules to interpret the BNF
+grammar literally. With his system, it would require two passes: one to parse the expression and another to verify if
+the expression can be a declarator. This would be a lot easier with this system, as it would just involve checking if 
+the expression is either unary-prefix (<code>*</code>, <code>&</code> and probably <code>&&</code>) or binary (with the previous
+operators, and <code>[]</code> and <code>()</code>) with a type as the left hand operand, and recursively apply that to
+the nested expressions. It would also give functional casts by default, switching to declarators wherever needed. In hindsight,
+this system would give cleaner code, but would introduce a second pass into parsing, which would incur additional complexity
+elsewhere. It would also involve a fair bit of AST rewriting when transforming the expression into the declaration node.
+<br><br>
+So, would it be better than the current system I made? It is hard to say. The current system is still not too hard to read,
+as it is only the one rule that is affected. It is also still a simple, one-pass system which does not rely on any AST
+rewriting. This week, I will plumb this new code into <code>TryParseOperand()</code> and <code>TryReadStatement()</code>,
+and after a few changes the parser will basically be done and I will be ready to start Part II of my GSoC project. I will
+not be handling non-type template arguments for now as they involve converting the EDL AST to a JDI one and array bounds
+expressions which require implementing the <code>AST::Node::eval()</code> function for all the various nodes.
+</p>
+</p>
+            </div>
+            
+            <div class="goto-top links">
+                <a href="#container">go to top</a>
+            </div>
+            <br />
+            <div class="embed">
+                <span>GSoC Week 7: 'Temporary Initialization' more like 'Permanent Pain'</span>
+                <span>Dhruv Chawla</span>
+                <span>2 August 2022</span>
+                <span class="links"><a href="https://dc03.github.io/blog/GSoC_Week_7_2022_08_02.html">https://dc03.github.io/blog/GSoC_Week_7_2022_08_02.html</a></span>
+            </div>
+            <br />
+            <hr class="finish-line" />
+        </div>
+    </body>
+</html>
