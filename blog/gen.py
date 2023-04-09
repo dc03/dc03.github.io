@@ -1,12 +1,14 @@
+#!/usr/bin/env python3
 import toml
 import os
 
 from datetime import datetime
 
+
 def validate_contents(contents):
-    if "heading" not in contents or "content" not in contents:
+    if "heading" not in contents:  # or "content" not in contents:
         return False
-    
+
     if "heading" in contents:
         if "PAGE_TITLE" not in contents["heading"]:
             return False
@@ -14,9 +16,9 @@ def validate_contents(contents):
             return False
         if "DATE" not in contents["heading"]:
             return False
-    if "content" in contents:
-        if "CONTENT" not in contents["content"]:
-            return False
+    # if "content" in contents:
+    #     if "CONTENT" not in contents["content"]:
+    #         return False
     return True
 
 
@@ -33,20 +35,51 @@ def main():
                             print("Error: Invalid contents in {}".format(filename))
                             continue
                         else:
-                            date = datetime.strptime(contents["heading"]["DATE"], "%d %B %Y")
+                            date = datetime.strptime(
+                                contents["heading"]["DATE"], "%d %B %Y"
+                            )
                             title = contents["heading"]["PAGE_TITLE"]
-                            blog_filename = (title + "_" + date.strftime("%Y_%m_%d")).replace(" ", "_") + ".html"
+                            content = None
+                            if (
+                                "content" not in contents
+                                or "CONTENT" not in contents["content"]
+                            ):
+                                html_name = filename.rstrip(".toml") + ".html"
+                                html_path = os.sep.join([dirpath, html_name])
+                                if os.path.exists(html_path):
+                                    with open(html_path) as html_contents:
+                                        content = html_contents.read()
+                                if content == None:
+                                    print(
+                                        "Error: No content found for file {}".format(
+                                            filename
+                                        )
+                                    )
+                                    continue
+                            else:
+                                content = contents["content"]["CONTENT"]
+                            blog_filename = (
+                                title + "_" + date.strftime("%Y_%m_%d")
+                            ).replace(" ", "_") + ".html"
                             with open(blog_filename, "wt") as blog_file:
-                                blog_file.write(template.format(**contents["heading"], **contents["content"], LINK=f"https://dc03.github.io/blog/{blog_filename}"))
-                            list_of_files.append([date, contents["heading"]["BLOG_TITLE"], blog_filename])
+                                blog_file.write(
+                                    template.format(
+                                        **contents["heading"],
+                                        CONTENT=content,
+                                        LINK=f"https://dc03.github.io/blog/{blog_filename}",
+                                    )
+                                )
+                            list_of_files.append(
+                                [date, contents["heading"]["BLOG_TITLE"], blog_filename]
+                            )
 
         list_of_files.sort(key=lambda x: x[0], reverse=True)
         for date, blog_title, blog_filename in list_of_files:
             print("{} -> {}".format(blog_title, blog_filename))
-        
+
         with open("index.template.html") as index_template:
             index_template = index_template.read()
-            format = """
+            fmt = """
                 <li class="blog">
                     <div class="blog_title">
                         <a href="{BLOG_FILENAME}" class="blog-link">{BLOG_TITLE}</a>
@@ -57,9 +90,14 @@ def main():
             """
             links = ""
             for date, blog_title, blog_filename in list_of_files:
-                links += format.format(DATE=date.strftime("%d %B %Y"), BLOG_TITLE=blog_title, BLOG_FILENAME=blog_filename )
+                links += fmt.format(
+                    DATE=date.strftime("%d %B %Y"),
+                    BLOG_TITLE=blog_title,
+                    BLOG_FILENAME=blog_filename,
+                )
             with open("index.html", "wt") as index_file:
                 index_file.write(index_template.format(LINKS=links))
+
 
 if __name__ == "__main__":
     main()

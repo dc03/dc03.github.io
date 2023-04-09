@@ -21,6 +21,26 @@
                 <span class="list-separator">|</span>
                 <a href="assets/resume.pdf">resume</a>
             </div>
+            <div class="scaler">
+                <span id="scalercontent"
+                    ><input
+                        type="range"
+                        min="1"
+                        max="100"
+                        value="100"
+                        class="slider"
+                        id="thescaler"
+                        title="Zoom slider" />
+                    <input
+                        id="slidervalue"
+                        type="number"
+                        min="0.5"
+                        max="1.0"
+                        step="0.01"
+                        placeholder="1.00"
+                        title="Zoom amount"
+                /></span>
+            </div>
             <div class="top">
                 <h2 class="title">Hi, my name is Dhruv Chawla.</h2>
                 <p class="content">
@@ -28,8 +48,9 @@
                     Vellore. I primarily write programs using C++, C and Python, though I have experimented with other
                     languages such as Java, JavaScript, TypeScript, Haskell, Scheme, PHP, Assembly (x86_64) and Rust.
                     <br /><br />
-                    My hobbies include browsing HackerNews for interesting articles, playing games like Assetto Corsa,
-                    Dirt Rally, and Minecraft, and binging too many Gordon Ramsay compilations on YouTube.
+                    My hobbies include browsing HackerNews for interesting articles, playing games like CS:GO and
+                    binging too many videos on YouTube. I am currently learning about the LLVM compiler infrastructure,
+                    and am working on my own C compiler.
                     <br /><br />
                     I have worked on a few projects over the past couple of years, they are:
                 </p>
@@ -39,8 +60,8 @@
                         interpreted language built from the ground-up using C++
                     </li>
                     <li>
-                        <a href="https://github.com/dc03/matty">matty</a> : an optionally (on x86) SIMD
-                        accelerated matrix math library
+                        <a href="https://github.com/dc03/matty">matty</a> : an optionally (on x86) SIMD accelerated
+                        matrix math library
                     </li>
                     <li>
                         <a href="https://github.com/dc03/BitArray">BitArray</a> : a small, single-header C++ library
@@ -98,5 +119,6 @@
             <br />
             <hr class="separator" />
         </div>
+        <script src="js/scaler.js"></script>
     </body>
 </html>

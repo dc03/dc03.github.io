@@ -24,10 +24,30 @@
                 <span class="list-separator">|</span>
                 <a href="../blog/index.html">blogs</a>
             </div>
+            <div class="scaler">
+                <span id="scalercontent"
+                    ><input
+                        type="range"
+                        min="1"
+                        max="100"
+                        value="100"
+                        class="slider"
+                        id="thescaler"
+                        title="Zoom slider" />
+                    <input
+                        id="slidervalue"
+                        type="number"
+                        min="0.5"
+                        max="1.0"
+                        step="0.01"
+                        placeholder="1.00"
+                        title="Zoom amount"
+                /></span>
+            </div>
             <div class="content">
                 <p>{CONTENT}</p>
             </div>
-            
+
             <div class="goto-top links">
                 <a href="#container">go to top</a>
             </div>
@@ -41,5 +61,6 @@
             <br />
             <hr class="finish-line" />
         </div>
+        <script src="../js/scaler.js"></script>
     </body>
 </html>

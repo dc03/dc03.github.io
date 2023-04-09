@@ -10,8 +10,6 @@ body {
     display: flex;
     align-items: center;
     flex-direction: column;
-    /* border-right: 2px dashed black;
-    border-left: 2px dashed black; */
     max-width: 1000px;
     font-family: "Fira Mono", "Courier New", Courier, monospace;
 }
@@ -23,6 +21,7 @@ body {
 
 .separator {
     width: 50%;
+    margin: 20px;
 }
 
 .top,
