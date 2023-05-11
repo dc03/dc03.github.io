@@ -1,0 +1,64 @@
+<p>
+    This blog post is related to my
+    <a href="https://summerofcode.withgoogle.com/programs/2023/projects/JdqGUwNq">GSoC 2023 Project</a>.
+</p>
+<p>
+    Before anything, I would like to thank my mentor Nikita Popov for deciding to mentor me and accepting my proposal.
+    Working on LLVM has been a dream of mine since I discovered both GSoC and it in 2021 and being able to realise it
+    within the short span of 2 years means a lot to me.
+</p>
+<p>
+    The project that I have decided to work on is <code>Improving Compile Times</code>, which is basically about finding
+    and exploiting optimization opportunities within LLVM to decrease geomean compile times by (realistically) 1% to
+    (optimistically) 4-5%. For this, the main target for optimization is <code>SelectionDAG</code> and within it
+    <code>DAGCombiner</code>, as they use up a major portion of compile time.
+</p>
+<p>
+    To start with, with the idea from my mentor,
+    <a href="https://reviews.llvm.org/rG1d21d2eb7f1dc205c42cfccd1d7890442a78e912">I removed a redundant call</a> to the
+    expensive <code>SelectionDAG::computeKnownBits</code> function from
+    <code>TargetLowering::SimplifyDemandedBits</code>, for the cases of <code>ISD::MUL</code>, <code>ISD::ADD</code> and
+    <code>ISD::SUB</code>. More optimization opportunities remain though, as the NSW (No Signed Wrap) flag is currently
+    not used as it is also not used by the <code>KnownBits::computeForAddCarry</code> function (which is called by
+    <code>computeKnownBits</code>). This ensures that the change remains an NFC, and further work can be done in
+    <code>computeForAddCarry</code> with more research regarding whether or not the add with carry instructions support
+    the NSW flag.
+</p>
+<p>
+    This change nets a speedup of
+    <a href="https://llvm-compile-time-tracker.com/?remote=dc03">0.26% on the geomean compile times</a>, which is quite
+    surprising given just how simple it is. I guess because of the frequency of ADD, SUB and MUL instructions, any work
+    done on their code paths will net a large gain.
+</p>
+<p>
+    The next bit of work to be done involves moving a fold of an <code>ISD::ADD</code> to an <code>ISD::OR</code> when
+    the two operands do not have any shared known bits, i.e. folding <code>a + b</code> into <code>a | b</code>. This
+    code currently resides in the <code>DAGCombiner::visitADD</code> function and calls the
+    <code>SelectionDAG::haveNoCommonBitsSet</code> function, which is quite expensive as once again it involves calls to
+    <code>computeKnownBits</code>. All the information required to carry out this transformation is already present when
+    <code>SimplifyDemandedBits</code> is called through <code>visitADDLike</code>.
+</p>
+<p>
+    This transformation therefore is pretty easy to move into <code>SimplifyDemandedBits</code>, however the issue that
+    I am stuck on currently and have been stuck on for the past 2 days is that this is causing transformation failures
+    where ADDs are not being correctly folded to ORs in some cases (for example AVX, <code>vpaddd</code> ->
+    <code>vpor</code> in <code>llvm/test/CodeGen/X86/combine-shl.ll</code>). Hopefully I can figure out this issue by
+    this weekend and have a patch submitted for it, as it seems strange that the same logic in a different place within
+    the same code path is causing differing results.
+</p>
+<p>
+    The next bit of work that I can do likely involves either working on the support for the NSW flag in the
+    <code>KnownBits::computeForAddCarry</code> function or starting on the part of my proposal which involves fixing
+    this issue: <a href="https://github.com/llvm/llvm-project/issues/33910">#33910</a>. The idea that I have with this
+    issue is that a large amount of time is spent in
+    <code>llvm::MDNodeKeyImpl&lt;llvm::DIDerivedType&gt;::isKeyOf</code>, which is a very complex operation which can
+    hopefully be sped up by rearranging the comparisons to check the most-likely-to-be-unequal members first. It will be
+    interesting to see what gains can actually be had from such a change.
+</p>
+<p>
+    For now, until I figure out the issue with <code>SimplifyDemandedBits</code>, I am binge watching the LLVM developer
+    meeting talks on YouTube to learn more about what actually goes on behind the scenes in LLVM, mainly focusing on the
+    backend i.e. things such as <code>SelectionDAG</code>, <code>MIR</code> and the <code>MC</code> layer. These talks
+    have already been immensely helpful with understanding the extremely vast and complex systems that make up LLVM, and
+    I highly recommend watching them to anyone who is interested in getting into working on LLVM.
+</p>
