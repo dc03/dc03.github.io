@@ -1,0 +1,87 @@
+<p>
+  This blog post is related to my
+  <a href="https://summerofcode.withgoogle.com/programs/2023/projects/JdqGUwNq">GSoC
+    2023 Project</a>.
+</p>
+<p>
+  These past two weeks, I worked on the following two issues:
+  <ul>
+    <li>Moving a transform of an <code>ADD</code> to an <code>OR</code> from the
+      <code>DAGCombiner</code> to the
+      <code>TargetLowering::SimplifyDemandedBits</code> function.
+    </li>
+    <li> Reducing the number of entries inserted into the <code>PruningList</code>
+      of the <code>DAGCombiner</code> when the
+      worklist is initially created.
+    </li>
+  </ul>
+</p>
+<p>
+  The reason that I did not write a post for the previous week and have instead combined it into the one for week 3 is
+  because there really was not anything to write about. While digging into the <code>SimplifyDemandedBits</code>
+  function, I spent a lot of time trying to understand what really went wrong and why the output from that function was
+  not matching the <code>DAGCombiner</code>.
+</p>
+<p>
+  So, why the difference? As it turns out, the implementation of <code>computeKnownBits</code> (which
+  <code>DAGCombiner</code>) uses does not match <code>SimplifyDemandedBits</code>. It is supposed to be the case that at
+  all <code>Depth</code> values, the output from the two functions should exactly equal each other, however this is not
+  the case. This mostly seems to occur from differences between the cases for the following three instructions:
+  <ul>
+    <li><code>ISD::SHL</code></li>
+    <li><code>ISD::SRL</code></li>
+    <li><code>ISD::SRA</code></li>
+  </ul>
+  However, I do not unfortunately have enough experience with the code to know exactly what the differences are. This is
+  just what I noted from comparing the code for both of the functions. It seems in <code>SimplifyDemandedBits</code>
+  that the implementation just bails on computing the known bits for the above cases when the function
+  <code>getValidShiftAmountConstant</code> returns <code>nullptr</code>.
+</p>
+<p>
+  I did attempt a fix for this, by adding an <code>else</code> case for that condition, and then calling
+  <code>SimplifyDemandedBits</code> within that block to compute the known bits, however that just caused more test
+  cases to fail. What I also found strange were the cases where target-dependent instructions were not having the same
+  known bits computed across both the functions, for example the instruction <code>PSHUFD</code> was causing a check
+  comparing the outputs of <code>computeKnownBits</code> and <code>SimplifyDemandedBits</code> to fail.
+</p>
+<p>
+  This one really perplexed me, and the issue may have been caused by one of the operands not having its known bits
+  correctly calculated, however I did not really look into it. Anyways, there was not a lot to gain from this: I
+  pushed the (incorrect) code to the compile time tracker, and the
+  <a href="https://llvm-compile-time-tracker.com/compare.php?from=53c03a3db16cd9b51476ce4b4fb1adc1b58f1ff7&to=d8d380ca6e4dbf95d96672de456662751630f8eb&stat=instructions%3Au">gain was only 0.10%</a>.
+  So, I decided to give up on the issue.
+</p>
+<p>
+  I then worked on another issue, also in <code>DAGCombiner</code>: my mentor noticed that the insertion of data in
+  <code>PruningList</code> was using up too much time in the backed (sometimes upto 2% of total time), and this
+  presented a great opportunity to make that better. The pruning list is used to accumulate DAG nodes for clean up after
+  they have possibly been optimized by the various transforms. Basically, if a node in the pruning list has no uses, it
+  is deleted from the DAG. This is possible either when the node has no original uses or when all the nodes that were
+  using it get deleted as well.
+</p>
+<p>
+  When forming the initial worklist, all nodes are added to the pruning list as well. However, this does not make sense
+  intuitively as initially only the nodes which have no uses will be deleted, as no optimizations have been run.
+  Therefore it only makes sense to first push those nodes which have no uses when forming the initial worklist and then
+  proceeding as normal where all nodes regardless of number of uses are pushed to the pruning list as well when they are
+  added to the worklist.
+</p>
+<p>
+  This makes sense because it is possible that a node is added to the pruning list when one of its parent nodes are
+  deleted. Then all the nodes that use this node also get deleted, before this node gets processed. If nodes are only
+  inserted to the pruning list when their use count drops to zero, this situation is not accounted for. This may be one
+  of the reasons why I had some test cases failing when I only inserted nodes to the pruning list when their use count 
+  was zero.
+</p>
+<p>
+  So, the following patch was created: <a href="https://reviews.llvm.org/D151416">https://reviews.llvm.org/D151416</a>.
+  It adds a parameter <code>IsCandidateForPruning</code> to the function <code>AddToWorklist</code>, which controls
+  whether or not the node is added to the pruning list. To avoid changing the many call sites that are there, this is
+  given the default value of <code>true</code>. This change nets a pretty good compile time gain:
+  <a href="https://llvm-compile-time-tracker.com/compare.php?from=cf1ef4161006e8119761b3a137423c23436bcf33&to=2bc07480f56369a97e713c431af1962b2ba4b507&stat=instructions%3Au">0.49% geomean</a>.
+</p>
+<p>
+  There is further work that can be done on this as the pruning list still uses a fair amount of time: 0.42% in the
+  profile I have right now. However, the law of diminishing returns kicks in here, and there are many other places in
+  the compiler which are great for optimization. Thus, I will try to find new places next.
+</p>
