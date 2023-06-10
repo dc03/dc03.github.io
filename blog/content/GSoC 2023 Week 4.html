@@ -1,0 +1,165 @@
+<p>
+  This blog post is related to my
+  <a href="https://summerofcode.withgoogle.com/programs/2023/projects/JdqGUwNq">GSoC
+    2023 Project</a>.
+</p>
+<p>
+  This week, I had mainly spent my time trying out various little experiments to see if any of them made a difference on
+  performance. Even though I got no real results out of it, I was trying to get more accomodated with the codebase and
+  I learned a lot from it!
+</p>
+<p>
+  I also spent time on <a href="https://github.com/llvm/llvm-project/issues/33910">issue #33910</a>, and I was able to
+  get the code to run 50% faster just with one word and one comma added!
+</p>
+<p>
+  Here are the various experiments that I tried:
+  <ul>
+    <li>
+      Only insert nodes in <code>PruningList</code> when <code>use_empty()</code> in <code>AddUsersToWorklist</code> and
+      <code>AddToWorklistWithUsers</code>
+
+      <p>
+        My first attempt was at building off of the work that I had done last week, where I introduced a new parameter
+        <code>IsCandidateForPruning</code> to reduce the number of <code>PruningList</code> insertions that were done.
+        However, it seems like that patch already did pretty much all the work with regards to speeding up the pruning
+        list, and I only saw a tiny improvement to performance, so small that I didn't bother checking it on the compile
+        time tracker.
+      </p>
+      <p>
+        I still believe there is performance to be gained here, I just don't know how much. I'm assuming its not a lot.
+      </p>
+    </li>
+    <li>
+      Change <code>DenseMap</code> to use <code>constexpr</code> for <code>shouldReverseIterate</code>
+
+      <p>
+        This change was me taking a shot in the dark, just throwing things at the wall and trying to see if something
+        stuck. In this case, I naively assumed that the compiler would somehow not be able to optimize one line of code
+        whose values are known at compile time and all required function definitions are visible into an if statement.
+      </p>
+      <p>
+        As expected, this change did not net anything at all.
+      </p>
+    </li>
+    <li>
+      Change <code>DenseMap</code> to use Fibonacci Hashing
+
+      <p>
+        This one was a little silly, to be honest. <code>DenseMap</code> currently uses quadratic probing to locate
+        keys, and I wanted to try a different form of hashing to see the performance differences.
+        <a href="https://probablydance.com/2018/06/16/fibonacci-hashing-the-optimization-that-the-world-forgot-or-a-better-alternative-to-integer-modulo/">
+          Fibonacci Hashing
+        </a>
+        is a form of hashing which seemed quite promising at first to me. However, I either implemented it incorrectly
+        or quadratic probing is already good enough (I suspect it is the former), as I did not see any improvements when
+        I used Fibonacci hashing, and infact the performance slightly regressed.
+      </p>
+      <p>
+        One thing which made it quite difficult for me to test small changes properly was the fact that changing any
+        part of that header would lead to recompiling pretty much every other file in the project. This is really quite
+        offputting, but I'm still interested in this change and might come back to it later.
+      </p>
+    </li>
+    <li>
+      Disable the first call to <code>DAGCombiner</code> (curiosity's sake)
+
+      <p>
+        This change was just for fun. I wanted to see what would happen if I diasbled one of the calls to
+        <code>DAGCombiner::Run</code> in <code>SelectionDAG</code>. As expected, it led to many test failures.
+      </p>
+    </li>
+    <li>
+      Call <code>.insert()</code> with range on <code>Set</code> and <code>.clear()</code> on <code>Vector</code> in
+      <code>SmallSet::insert</code>
+
+      <p>
+        This was part of the changes I was making to try and make the <code>PruningList</code> in
+        <code>DAGCombiner</code> run faster. I assumed that the set operations were slow (correct), but then I assumed
+        that <code>SmallSetVector</code> used <code>SmallSet</code> (wrong). It actually uses
+        <code>SmallDenseSet</code>.
+      </p>
+      <p>
+        I actually did expect this to make a difference though, no matter how minor. I assumed that calling the batch
+        operations on <code>Set</code> and <code>Vector</code> would be faster (which they are), but I didn't realize
+        that these operations are only called once in the entire set's lifetime, which is when it is expanding from the
+        "small" to the "large" representation. :facepalm:
+      </p>
+    </li>
+    <li>
+      Change <code>Worklist</code> and <code>PruningList</code> small size to 128 in <code>DAGCombiner</code>
+
+      <p>
+        This was another silly change. I assumed that increasing the small size would lead to better performance, but I
+        didn't realize that the small size was in terms of number of elements, not in terms of number of bytes. So this
+        actually led to my cache getting thrashed and my performance getting slashed, as the small representation uses
+        a linear search, which is great at small sizes but awful with larger sizes.
+      </p>
+    </li>
+    <li>
+      Change <code>while (!CallSUnits.empty())</code> to range-based for loop in <code>BuildSchedUnits</code>
+
+      <p>
+        This loop is present at the end of the function <code>ScheduleDAGSDNodes::BuildSchedUnits</code>. This is also
+        a function that I see taking up a lot of time, so I thought that changing this from the usual worklist-style 
+        loop to a normal one would lead to some performance gain, but either I guessed wrong about how many times this
+        part of the code executes or how much time the constituent computations actually take.
+      </p>
+      <p>
+        It is probably a combination of both, <code>SmallVector</code> operations are very cheap in the small
+        representation and that loop is not run many times. The reason I know this is that changing the small size of
+        <code>CallSUnits</code> did not affect the runtime, and in fact led to a slight regression in performance.
+      </p>
+    </li>
+  </ul>
+</p>
+<p>
+  To be honest, these experiments were really quite helpful to me. While quite demoralizing, they helped me better
+  understand how the LLVM data structures work and also how to use KCacheGrind more properly in terms of analyzing the
+  emitted machine code and the source code.
+</p>
+<p>
+  These experiments also helped me run an experiment which gave unexpectedly good results, this I will cover in the post
+  for next week.
+</p>
+<p>
+  Regarding issue #33910, the reason for the <code>isKeyOf</code> operation being so slow was not because of the
+  ordering of the comparisons within it but instead because of the number of times it was called. I should have expected
+  that some <code>&&</code>s and <code>==</code>s would not have had a meaningful difference on performance, and instead
+  it would've been a much better idea to reduce the number of times that function is called.
+</p>
+<p>
+  This was something I realized when I actually dove into the issue and measured the various equality operators and how
+  often they were inequal. This gave a very interesting result: the comparisons were pretty much dominated by 
+  differences between the <code>OffsetInBits</code> metadata, and it was about 60x more likely to be inequal on average:
+
+  <div class="image-container">
+    <img src="assets/GSoC Week 4 - performance.png" class="image-content">
+  </div>
+</p>
+<p>
+  Note that this is not even the full data generated, I stopped it when it had roughly as many rows as there are
+  <code>OffsetInBits</code> inequalities, because at that point I had 1.2GiB of data and not enough RAM to load it all
+  at once.
+</p>
+<p>
+  When I brought this up with my mentor, they told me that this is probably the cause of the quadratic behaviour, as
+  the <code>getHashValue</code> function for <code>DIDerivedType</code> did not take into account the
+  <code>OffsetInBits</code> parameter. The reason for so many inequalities was because the file provided by the
+  issue (at least for the small case) has pretty much 20,000 lines of metadata with exactly two unique names:
+  <code>Va</code> and <code>Vb</code>, with only the <code>OffsetInBits</code> differing between them. This hit the
+  corner case of not including that value in the hash function, which caused an explosion in the collision chains and
+  thus caused the compile time explosion.
+</p>
+<p>
+  As expected, changing the hash function to take <code>OffsetInBits</code> into account led to a huge reduction in
+  compile time, from roughly 8 seconds to 4.3 seconds. This pretty much erased <code>isKeyOf</code> from the flamegraph,
+  and the only bottleneck now is <code>ReplaceableMetadataImpl::replaceAllUsesWith</code>, which requires uniquing all
+  metadata all over again each time it is called. This is extremely slow, and it makes sense to only unique things after
+  the whole file is parsed.
+</p>
+<p>
+  As per my GSoC proposal, I was actually supposed to work on this during the midterm eval,
+  so I will be pushing fixing this issue back while I focus on non-edge cases. I think the solution is simple enough
+  that postponing it will be fine.
+</p>

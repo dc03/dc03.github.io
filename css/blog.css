@@ -82,4 +82,12 @@ tr {
     margin: 2px;
 }
 
+.image-container {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: fit-content;
+}
+
 @import "main-post.css";
