@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="description" content="" />
+        <meta name="keywords" content="" />
+        <link rel="stylesheet" href="../css/blog.css" />
+
+        <title>GSoC 2023 Week 7</title>
+    </head>
+
+    <body>
+        <div class="container" id="container">
+            <div class="header">
+                <div class="title">GSoC 2023 Week 7 - <code>FastISel</code> is really fast</div>
+                <div class="date">24 June 2023</div>
+                <br />
+                <hr class="separator" />
+            </div>
+            <div class="links">
+                <a href="../index.html">home</a>
+                <span class="list-separator">|</span>
+                <a href="../blog/index.html">blogs</a>
+            </div>
+            <div class="scaler">
+                <span id="scalercontent">
+                    <span class="small-plus">A</span>
+                    <input
+                        type="range"
+                        min="1"
+                        max="100"
+                        value="100"
+                        class="slider"
+                        id="thescaler"
+                        title="Zoom slider" />
+                    <span class="big-plus">A</span>
+                    <input
+                        id="slidervalue"
+                        type="number"
+                        min="0.5"
+                        max="1.0"
+                        step="0.01"
+                        placeholder="1.00"
+                        title="Zoom amount"
+                /></span>
+            </div>
+            <div class="content">
+                <p><p>
+  This blog post is related to my
+  <a href="https://summerofcode.withgoogle.com/programs/2023/projects/JdqGUwNq">GSoC
+    2023 Project</a>.
+</p>
+<p>
+  This week, I spent most of my time on <code>FastISel</code> and <code>VarLocBasedLDV</code>. In the process, I learnt
+  that <code>FastISel</code> is in fact, as the name implies, quite "fast". I also tried to optimize
+  <code>VarLocBasedLDV</code>, however I fell into a derp-induced optimization which gave me the wrong confidence that I
+  had actually found a good improvement :D.
+</p>
+<p>
+  So, with <code>FastISel</code> I tried a few optimizations I thought would have good potential:
+  <ul>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/73cacbde365185407f6e2f4bf78d4b3965d3be43">Remove
+        <code>toIndex_</code> as a member of <code>IndexedMap</code></a> - This is a commit that I feel I should still
+      check the validity of, as even though it didn't give any useful performance improvements, it still removes an
+      unnecessary member from a container which may have benefits in terms of memory usage. I found it a bit odd that
+      the functor to map the index was instantiated as a non-static member, as the functor is usually constructed as a
+      temporary object in <code>std::</code> functions.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/7101a4251e82eac0cae997d206b5ce8c109d9973">Give
+        <code>MapVector</code> better performance for small sizes</a> - This is one I definitely expected to have really
+      good results. Maybe I didn't replace enough uses, but I expected this change to have an impact as it is basically
+      the same thing I did for <code>SetVector</code> just applied to <code>MapVector</code>. Maybe the requirement of
+      it being a map instead of a set has weird memory performance due to gaps between keys caused by the values, but
+      I don't know. I feel I should come back to this optimization, because I really do feel there is performance to be
+      gained here.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/1656cf790770585b4d3ef7dd6e15b185cabb5e82">Replace usages of
+        <code>MapVector</code> with <code>SmallMapVector</code></a> - A follow-up to the previous change, unfortunately
+      measurable improvements :(.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/34a0e886a7ee8acced95929dd4a54eba8c96705e">Replace 
+        <code>DenseMap</code> with <code>SmallDenseMap</code></a> - I expected this to improve performance, but for some
+      reason it didn't. I have noticed that generally replacing the small versions of <code>DenseMap</code> and
+      <code>DenseSet</code> with the generic large versions gives better performance, but I have no idea why.
+    </li>
+    <li>
+       <a href="https://github.com/llvm/llvm-project/commit/fd41b84b2ff5f816cb250ba73d51afcaed54e130">Replace usages
+        of <code>MapVector</code> with <code>SmallMapVector</code> in clang</a>  - Same thing as before, just in clang.
+      No measurable difference unfortunately.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/a7fec498831109fc4603c4e5ac53daf9c6634344">Reduce the number
+        of branches in <code>ScheduleDAGSDNodes</code></a> - A bit of a detour from the <code>FastISel</code> stuff, for
+      some reason I committed it under the same branch. Not much measurable results here either, sadly.
+    </li>
+  </ul>
+</p>
+<p>
+  I also got a good few experiments out of <code>VarLocBasedLDV</code>, however I haven't hammered them into something
+  useful yet:
+  <ul>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/9a1d7a2468f69891caab3636eee61237771bd257">Make
+        <code>CoalescingBitVector</code> movable again</a> - This change reverts a change done by a previous patch:
+      <a href="https://reviews.llvm.org/D76465">https://reviews.llvm.org/D76465</a>. This patch removed the move
+      constructors, and I'm not really sure why. So, I added them back and removed the unnecessary
+      <code>std::unique_ptr</code> in the type alias <code>VarLocInMBB</code>. This gave a noise-equivalent speedup, but
+      I think its still worth pursuing for memory reasons.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/6e0b85f9c6387ff1d8418dd250010eaffcaddb7f">Messing around with
+        data structures</a> - As I said before, this is one of the things I like doing most. However, in this case it
+      actually leads to a major slow down,
+      <a href="https://llvm-compile-time-tracker.com/compare.php?from=9a1d7a2468f69891caab3636eee61237771bd257&to=6e0b85f9c6387ff1d8418dd250010eaffcaddb7f&stat=instructions:u">~0.3%</a>.
+      That is not good.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/284153009a86ef108fb99fed98d953eea8c2083a">"Optimize"
+        <code>collectIDsForRegs</code></a> - "Optimize" is in quotes there, because I didn't realize at the time that I
+      was removing an iteration over the sorted collection from the for-loop. I did that, then forgot about it, then
+      removed the sort entirely from the function because I only saw a use in taking the <code>front()</code> element.
+      Not my brightest moment.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/92d43c792b98942e000b8d1325c72353761e8796">Replace
+        <code>std::vector</code> with <code>SmallVector</code></a> - I noticed that this gave a gain locally,
+      unfortunately this gain was not visible on the compile time tracker. In general, <code>SmallVector</code> is
+      supposed to be better than <code>std::vector</code>, because it does less work regarding exception handling among
+      other things.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/01a57bb4e81c86869c93601f3bd2e2b1a5442023">Remove a redundant
+        two-time lookup</a> - This was pointed out to me by my mentor, and it does have a bit of an impact however its
+      not enough to really warrant a patch. I will probably commit this as an NFC later on.
+    </li>
+  </ul>
+</p>
+<p>
+  So, those were all the experiments I did this week. There were quite a few of them, unfortunately none of them panned
+  out the way I wanted them to. However, I do feel there are a few of them that should still be looked into further, and
+  I will probably do so.
+</p></p>
+            </div>
+
+            <div class="goto-top links">
+                <a href="#container">go to top</a>
+            </div>
+            <br />
+            <div class="embed">
+                <span>GSoC 2023 Week 7 - <code>FastISel</code> is really fast</span>
+                <span>Dhruv Chawla</span>
+                <span>24 June 2023</span>
+                <span class="links"><a href="https://dc03.github.io/blog/GSoC_2023_Week_7_2023_06_24.html">https://dc03.github.io/blog/GSoC_2023_Week_7_2023_06_24.html</a></span>
+            </div>
+            <br />
+            <hr class="finish-line" />
+        </div>
+        <script src="../js/scaler.js"></script>
+    </body>
+</html>
