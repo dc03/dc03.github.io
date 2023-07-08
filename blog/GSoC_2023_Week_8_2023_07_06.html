@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="description" content="" />
+        <meta name="keywords" content="" />
+        <link rel="stylesheet" href="../css/blog.css" />
+
+        <title>GSoC 2023 Week 8</title>
+    </head>
+
+    <body>
+        <div class="container" id="container">
+            <div class="header">
+                <div class="title">GSoC 2023 Week 8 - <code>InstCombine</code> & <code>SmallVector</code> Experiments</div>
+                <div class="date">06 July 2023</div>
+                <br />
+                <hr class="separator" />
+            </div>
+            <div class="links">
+                <a href="../index.html">home</a>
+                <span class="list-separator">|</span>
+                <a href="../blog/index.html">blogs</a>
+            </div>
+            <div class="scaler">
+                <span id="scalercontent">
+                    <span class="small-plus">A</span>
+                    <input
+                        type="range"
+                        min="1"
+                        max="100"
+                        value="100"
+                        class="slider"
+                        id="thescaler"
+                        title="Zoom slider" />
+                    <span class="big-plus">A</span>
+                    <input
+                        id="slidervalue"
+                        type="number"
+                        min="0.5"
+                        max="1.0"
+                        step="0.01"
+                        placeholder="1.00"
+                        title="Zoom amount"
+                /></span>
+            </div>
+            <div class="content">
+                <p><p>
+  This blog post is related to my
+  <a href="https://summerofcode.withgoogle.com/programs/2023/projects/JdqGUwNq">GSoC
+    2023 Project</a>.
+</p>
+<p>
+  This week, I mostly worked on experiments regarding <code>InstCombine</code> that my mentor recommended me to check 
+  out as possible places for improvements. One of these experiments does have some potential, though it needs further
+  investigation.
+</p>
+<p>
+  I also worked on creating an ADT which works like <code>SmallVector</code> but only does allocations on the stack.
+  This ADT was called <code>StackVector</code> and while it did not turn out to have any measurable improvements, it was
+  a good experiment to learn how to implement a container whose interface is compatible with <code>SmallVector</code>.
+</p>
+<p>
+  The experiments were:
+  <ul>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/eca87099ea457a7b3f1a39167a053e6aa43f33c5">
+        Remove the call to <code>threadCmpOverPHI</code> in <code>simplifyICmpInst</code>
+      </a> - This is a change to measure the speedup that can be gained by disabling <code>threadCmpOverPHI</code> as it
+      seemed to be a fairly hot path in the code. This gave a
+      <a href="https://llvm-compile-time-tracker.com/compare.php?from=dd639eb15aacfc865409915516f52385c4381923&to=eca87099ea457a7b3f1a39167a053e6aa43f33c5&stat=instructions:u">
+        0.24% speedup</a>.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/72561e65c9bf044e0628c8dc4b0ac15fe142ea7e">
+        Limit the recursion depth in <code>threadCmpOverPHI</code> to 1.
+      </a> - Other places in the compiler (such as <code>ValueTracking</code>) only allow recursing one level into phi
+      nodes. By limiting the recursion depth to 1 in <code>InstSimplify</code> as well, it is possible to get a
+      <a href="https://llvm-compile-time-tracker.com/compare.php?from=dd639eb15aacfc865409915516f52385c4381923&to=72561e65c9bf044e0628c8dc4b0ac15fe142ea7e&stat=instructions%3Au">
+        0.1% speedup</a>. This is the patch that is worth pursuing.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/ef0bc766b21f474db94ef9191d89697e3005ab0d">
+        Query <code>!range</code> metadata only on <code>Load</code> and <code>Call</code> instructions
+      </a> - <code>!range</code> metadata can occur only in <code>Load</code> and <code>Call</code> instructions, so it
+      makes sense to only query it in those instructions. Unfortunately, this does not give a
+      <a href="https://llvm-compile-time-tracker.com/compare.php?from=72561e65c9bf044e0628c8dc4b0ac15fe142ea7e&to=ef0bc766b21f474db94ef9191d89697e3005ab0d&stat=instructions:u">
+        measurable improvement</a>.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/7fb4cdcdb9b6fc7ecd4db6b0ac91dbb77da07126">
+        Change <code>cmpExcludesZero</code> to return <code>std::optional&lt;bool&gt;</code>
+      </a> - This change took me 3 days to make, because I spent all that time trying to figure out how the 
+      function actually works. <code>cmpExcludesZero</code> is a function that returns true whenever the predicate
+      <code>Pred</code> being queried having the second operand <code>RHS</code> will always return false when the first
+      operand (i.e. the LHS) is zero, hence the name.
+
+      If it is called with the inverse predicate of <code>Pred</code> and it returns true, it means that the predicate
+      will always return true when the LHS is zero. An example of this would be the expression <code>LHS == 0</code>.
+      To merge these two cases into one, the following logic applies:
+      <ul>
+        <li>If the range of values where the comparison returns true includes zero, return false.</li>
+        <li>If the range does not include zero, return true.</li>
+        <li>As the range can only be generated when the RHS is a known-constant value, return failure (i.e.
+          <code>std::nullopt</code>) to indicate that there is no way to predict the result.</li>
+      </ul>
+
+      It is quite unfortunate then, that this does not give a 
+      <a href="https://llvm-compile-time-tracker.com/compare.php?from=d96f235eb01d19cc9db6739217ce4d33fdae0f87&to=7fb4cdcdb9b6fc7ecd4db6b0ac91dbb77da07126&stat=instructions:u">
+        measurable speedup
+      </a>.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/831822a0b9d9849a73ae285ecdbb2b23b0a0dac1">
+        Track the value of <code>NumUsesExplored</code> in <code>isKnownNonNullFromDominatingCondition</code> inside
+        inner loops as well
+      </a> - This was an idea to reduce the number of iterations that the loops would perform, however they are not
+      usually high enough for this to make a change.
+      <a href="https://llvm-compile-time-tracker.com/compare.php?from=80f46b3929162637e536b28c2818dbbbe6cf8e8b&to=831822a0b9d9849a73ae285ecdbb2b23b0a0dac1&stat=instructions:u">
+        No measurable improvement, unfortunately
+      </a>.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/a2c83776edb05b569ef28da74479010ec36eb614">
+        Replace <code>getDereferenceableBytes()</code> with <code>hasParamAttribute()</code> in
+        <code>Attribute::hasNonNullAttr()</code>
+      </a> - Same thing as the above,
+      <a href="https://llvm-compile-time-tracker.com/compare.php?from=831822a0b9d9849a73ae285ecdbb2b23b0a0dac1&to=a2c83776edb05b569ef28da74479010ec36eb614&stat=instructions:u">
+        no measurable speedup
+      </a>.
+    </li>
+    <li>
+      <a href="https://github.com/llvm/llvm-project/commit/a49e4e4d6546b1991639a81869ae82f11fb71d6f">
+        Delete the code for <code>Instruction::GetElementPtr</code> from <code>computeKnownBitsFromOperator</code>
+      </a> - Simple change to measure the possible gains, gives a
+      <a href="https://llvm-compile-time-tracker.com/compare.php?from=a2c83776edb05b569ef28da74479010ec36eb614&to=a49e4e4d6546b1991639a81869ae82f11fb71d6f&stat=instructions:u">
+        0.7% speedup
+      </a>.
+    </li>
+  </ul>
+</p>
+<p>
+  <code>StackVector</code> was an idea that I had when I saw <code>SmallSet</code> and noticed that it only uses the
+  stack storage of the <code>SmallVector</code>, wasting code space and compile times on the part of the code used to
+  manipulate the heap storage. So, I spent 3-4 days trying to come up with a container that follows the exact interface
+  of <code>SmallVector</code>, just with storage limited to the stack. As it turns out, this is also a container that
+  may make it into the C++26 standard:
+  <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p0843r6.html">P0843,
+    <code>std::inplace_vector</code></a>.
+</p>
+<p>
+  Designing this container was... interesting. <code>SmallVector</code> is relied on very heavily throughout LLVM, and
+  it is a super-optimized container with excellent performance. It does some strange things, however:
+  <ul>
+    <li>Whenever the contained type satisfies some conditions, it switches from calling
+      <code>std::uninitialized_move</code> to <code>std::uninitialized_copy</code>. This is good for performance for
+      certain types, however it means that there are types where the move constructor has to behave like a copy
+      constructor because even though the move constructor is called, the type is not move-constructible... not fun.
+      I ended up giving up on this problem and just copied what <code>SmallVector</code> does.
+    </li>
+    <li>
+      The iterators are pointers. While this is not a huge issue in actuality, it means that there is code that
+      implicitly relies on them being pointers, for example the constructor for <code>ArrayRef</code>, which is another
+      type that is designed to work well with <code>SmallVector</code>, for example having a constructor that accepts a 
+      <code>SmallVectorImpl</code>. This effectively means that there is no drop-in iterator type that works with the 
+      existing code, the iterators *have* to be pointers.
+      <p>
+        As an example, I tried to have an iterator type that could implicitly decay to the pointer type so that it would
+        work fine with <code>ArrayRef</code>. Unfortunately, that did not work because it caused
+        <code>Iterator::operator+</code> to have an ambiguity where it could resolve to either the overloaded
+        <code>Iterator::operator+</code> or the <code>operator+(T*, ...)</code> that could be called by decaying the 
+        iterator to a pointer. Not fun.
+      </p>
+      <p>
+        Another problem with the explicit iterator type route was that <code>SmallVector</code> and its users rely on
+        <code>iterator</code> being implicitly convertible to <code>const_iterator</code> (<code>T*</code> to
+        <code>const T*</code>). This is also not fun to deal with, it made me have to create four distinct iterator
+        types, where the <code>Const*</code> iterator types had implicit constructors from the corresponding iterator
+        types. I just gave up and switched the iterators to pointers at this point, with the suggestion from my mentor.
+      </p>
+    </li>
+    <li>
+       No explicit constructors. There are places in the code that rely on <code>SmallVector</code> being implicitly
+       constructible from whatever, so its not possible to have explicit constructors without updating quite a few
+       users. There is nothing wrong with this, it is just not very good practice. Always have <code>explicit</code>
+       constructors when they accept only one argument.
+    </li>
+  </ul>
+</p>
+<p>
+  This is what the final implementation ended up looking like:
+  <a href="https://github.com/llvm/llvm-project/blob/73af5c10ab093031f3258cc90ceb08364e35fd48/llvm/include/llvm/ADT/StackVector.h">
+    link</a>. I spent quite some time ironing out the bugs in this implementation, there were a lot of broken functions.
+  What helped me the most was adapting this container to the <code>SmallVector</code> unit tests, at least the ones that
+  would make sense to run on this. I had one really bad bug that took me way too long to fix though: in my excitement,
+  I ended up replacing the <code>SmallSetVector</code> type as well, but I forgot that <code>SetVector</code> actually
+  uses the heap storage as well. Unfortunately, this was not easy to debug as I ended up making <code>push_back()</code>
+  and <code>emplace_back()</code> fallible where it returned <code>end()</code> on the container being full, which meant
+  that it would end up silently corrupting stored data when the vector was full.
+</p>
+<p>
+  So, this led to one whole day where I was trying to build some tool, and it would keep failing on the TableGen step
+  where it would show a random failure somewhere. Even with assertions, this obviously did not fail anywhere because
+  the container had no assertions to trip :facepalm:. No more fallible operations for me, everything must crash and burn
+  when something goes wrong.
+</p>
+<p>
+  Even more unfortunately, though expected, no
+  <a href="https://llvm-compile-time-tracker.com/compare.php?from=7fb4cdcdb9b6fc7ecd4db6b0ac91dbb77da07126&to=69df2a5472699d3027c01226aebd81b803757aa0&stat=instructions:u">
+  meaningful improvements</a>, which is slowly becoming the tagline of my GSoC project :(. This also involved a change
+  where <code>SmallSet</code> would store a union of the set and the vector instead of both together, to save memory.
+  I was not able to measure if this made a difference in memory, though I expect it would have done <i>something</i>, at
+  the least. Oh well, it gave a tiny regression anyways, just as a last insult. I suspect I won't go on any container
+  making journeys any time soon, it is probably much easier to just make the ones that LLVM already has run faster.
+</p>
+</p>
+            </div>
+
+            <div class="goto-top links">
+                <a href="#container">go to top</a>
+            </div>
+            <br />
+            <div class="embed">
+                <span>GSoC 2023 Week 8 - <code>InstCombine</code> & <code>SmallVector</code> Experiments</span>
+                <span>Dhruv Chawla</span>
+                <span>06 July 2023</span>
+                <span class="links"><a href="https://dc03.github.io/blog/GSoC_2023_Week_8_2023_07_06.html">https://dc03.github.io/blog/GSoC_2023_Week_8_2023_07_06.html</a></span>
+            </div>
+            <br />
+            <hr class="finish-line" />
+        </div>
+        <script src="../js/scaler.js"></script>
+    </body>
+</html>
