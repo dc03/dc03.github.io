@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="description" content="" />
+        <meta name="keywords" content="" />
+        <link rel="stylesheet" href="../css/blog.css" />
+
+        <title>GSoC 2023 Week 9</title>
+    </head>
+
+    <body>
+        <div class="container" id="container">
+            <div class="header">
+                <div class="title">GSoC 2023 Week 9 - A Saturating Arithmetic And <code>ICmp</code> Fold</div>
+                <div class="date">08 July 2023</div>
+                <br />
+                <hr class="separator" />
+            </div>
+            <div class="links">
+                <a href="../index.html">home</a>
+                <span class="list-separator">|</span>
+                <a href="../blog/index.html">blogs</a>
+            </div>
+            <div class="scaler">
+                <span id="scalercontent">
+                    <span class="small-plus">A</span>
+                    <input
+                        type="range"
+                        min="1"
+                        max="100"
+                        value="100"
+                        class="slider"
+                        id="thescaler"
+                        title="Zoom slider" />
+                    <span class="big-plus">A</span>
+                    <input
+                        id="slidervalue"
+                        type="number"
+                        min="0.5"
+                        max="1.0"
+                        step="0.01"
+                        placeholder="1.00"
+                        title="Zoom amount"
+                /></span>
+            </div>
+            <div class="content">
+                <p><p>
+  This blog post is related to my
+  <a href="https://summerofcode.withgoogle.com/programs/2023/projects/JdqGUwNq">GSoC
+    2023 Project</a>.
+</p>
+<p>
+  This week, I worked on a couple of optimizations in <code>InstCombine</code>: folds of the form
+  <code>u[add|sub]_sat(X, C) pred C2</code>, where both <code>C</code> and <code>C2</code> are constants. This fold
+  takes on the general formula:
+<p>
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%">
+   u<span style='color:#0000ff; '>[</span>add<span style='color:#0000ff; '>|</span>sub<span style='color:#0000ff; '>]</span>_sat<span style='color:#0000ff; '>(</span>X<span style='color:#0000ff; '>,</span> C<span style='color:#0000ff; '>)</span> Pred C2
+<span style='color:#0000ff; '>=</span><span style='color:#0000ff; '>></span> <span style='color:#0000ff; '>(</span>OpWillWrap <span style='color:#0000ff; '>?</span> SaturatingValue <span style='color:#0000ff; '>:</span> <span style='color:#0000ff; '>(</span>X Binop C<span style='color:#0000ff; '>)</span><span style='color:#0000ff; '>)</span> Pred C2
+<span style='color:#0000ff; '>=</span><span style='color:#0000ff; '>></span>  OpWillWrap <span style='color:#0000ff; '>?</span> <span style='color:#0000ff; '>(</span>SaturatingValue Pred C2<span style='color:#0000ff; '>)</span> <span style='color:#0000ff; '>:</span> <span style='color:#0000ff; '>(</span><span style='color:#0000ff; '>(</span>X Binop C<span style='color:#0000ff; '>)</span> Pred C2<span style='color:#0000ff; '>)</span>
+</pre></div>
+</p>
+  When the value of <code>SaturatingValue Pred C2</code> is true, we get the following fold:
+<p>
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%">
+   OpWillWrap <span style='color:#0000ff; '>?</span> <span style='color:#0000ff; '> true</span> <span style='color:#0000ff; '>:</span> <span style='color:#0000ff; '>(</span><span style='color:#0000ff; '>(</span>X Binop C<span style='color:#0000ff; '>)</span> Pred C2<span style='color:#0000ff; '>)</span>
+<span style='color:#0000ff; '>=</span><span style='color:#0000ff; '>></span> OpWillWrap <span style='color:#0000ff; '>|</span><span style='color:#0000ff; '>|</span> <span style='color:#0000ff; '>(</span><span style='color:#0000ff; '>(</span>X Binop C<span style='color:#0000ff; '>)</span> Pred C2
+</pre></div>
+</p>
+  When the value is false, we get the following fold:
+<p>
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%">
+    OpWillWrap <span style='color:#0000ff; '>?</span> <span style='color:#0000ff; '> false</span> <span style='color:#0000ff; '>:</span> <span style='color:#0000ff; '>(</span><span style='color:#0000ff; '>(</span>X Binop C<span style='color:#0000ff; '>)</span> Pred C2<span style='color:#0000ff; '>)</span>
+<span style='color:#0000ff; '>=</span><span style='color:#0000ff; '>></span> <span style='color:#0000ff; '>!</span>OpWillWrap <span style='color:#0000ff; '>?</span> <span style='color:#0000ff; '> (</span><span style='color:#0000ff; '>(</span>X Binop C<span style='color:#0000ff; '>)</span> Pred C2 <span style='color:#0000ff; '>:</span> <span style='color:#0000ff; '>false</span>
+<span style='color:#0000ff; '>=</span><span style='color:#0000ff; '>></span> <span style='color:#0000ff; '>!</span>OpWillWrap <span style='color:#0000ff; '>&amp;</span><span style='color:#0000ff; '>&amp;</span> <span style='color:#0000ff; '>(</span><span style='color:#0000ff; '>(</span>X Binop C<span style='color:#0000ff; '>)</span> Pred C2
+</pre></div>
+</p>
+  It is usually possible to combine these two checks into just one comparison. For the two intrinsics currently
+  implemented, the <code>OpWillWrap</code> checks look like the following:
+  <ul>
+    <li><code>usub_sat</code>: <code>X < C</code></li>
+    <li><code>uadd_sat</code>: <code>X >= ~C</code></li>
+  </ul>
+  While the <code>usub_sat</code> check is quite obvious, I found the <code>uadd_sat</code> one is not, so here is a
+  little derivation:
+<p>
+<div style="background: #ffffff; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%">
+   <span style='color:#0000ff; '>(</span>X <span style='color:#0000ff; '>+</span> C <span style='color:#0000ff; '>></span><span style='color:#0000ff; '>=</span> UINT_MAX<span style='color:#0000ff; '>)</span>
+<span style='color:#0000ff; '>=</span><span style='color:#0000ff; '>></span> <span style='color:#0000ff; '>(</span>X <span style='color:#0000ff; '>    ></span><span style='color:#0000ff; '>=</span> UINT_MAX <span style='color:#0000ff; '>-</span> C<span style='color:#0000ff; '>)</span>
+<span style='color:#0000ff; '>=</span><span style='color:#0000ff; '>></span> <span style='color:#0000ff; '>(</span>X <span style='color:#0000ff; '>    ></span><span style='color:#0000ff; '>=</span> <span style='color:#0000ff; '>(</span>UINT_MAX <span style='color:#0000ff; '>+</span> <span style='color:#0000ff; '>~</span>C <span style='color:#0000ff; '>+</span> <span style='color:#800080; '>1</span><span style='color:#0000ff; '>)</span><span style='color:#0000ff; '>)</span> <span style='color:#0000ff; '>[</span>as <span style='color:#0000ff; '>-</span>C <span style='color:#0000ff; '>=</span><span style='color:#0000ff; '>=</span> <span style='color:#0000ff; '>(</span><span style='color:#0000ff; '>~</span>C <span style='color:#0000ff; '>+</span> <span style='color:#800080; '>1</span><span style='color:#0000ff; '>)</span><span style='color:#0000ff; '>]</span>
+<span style='color:#0000ff; '>=</span><span style='color:#0000ff; '>></span> <span style='color:#0000ff; '>(</span>X <span style='color:#0000ff; '>    ></span><span style='color:#0000ff; '>=</span> <span style='color:#0000ff; '>(</span><span style='color:#0000ff; '>~</span>C <span style='color:#0000ff; '>+</span> <span style='color:#800080; '>0</span><span style='color:#0000ff; '>)</span><span style='color:#0000ff; '>)</span> <span style='color:#0000ff; '>           [</span>as <span style='color:#0000ff; '>(</span>UINT_MAX <span style='color:#0000ff; '>+</span> <span style='color:#800080; '>1</span><span style='color:#0000ff; '>)</span> <span style='color:#0000ff; '>=</span><span style='color:#0000ff; '>=</span> <span style='color:#800080; '>0</span><span style='color:#0000ff; '>]</span>
+<span style='color:#0000ff; '>=</span><span style='color:#0000ff; '>></span> <span style='color:#0000ff; '>(</span>X <span style='color:#0000ff; '>    ></span><span style='color:#0000ff; '>=</span> <span style='color:#0000ff; '>~</span>C<span style='color:#0000ff; '>)</span>
+</pre></div>
+</p>
+<p>
+  This is a really neat way to check the condition without causing overflow through the addition.
+</p>
+<p>
+  It is possible to combine the value ranges for the two operands above, to yield just one <code>icmp</code> for the
+  overall expression. This can be done by noting the following:
+  <ul>
+    <li>
+      For operator <code>||</code>, either operand can be true for the whole expression to evaluate to true. This means
+      the overall value range for the expression will be the union of the LHS and the RHS, where the LHS is the value
+      range of the <code>OpWillWrap</code> expression. For the RHS, the value range remains the same across the two
+      types of expressions.
+    </li>
+    <li>
+      For operator <code>&&</code>, both operands have to be true for the whole expression to evaluate to true. This means
+      the overall value range for the expression will be the intersection of the LHS and the RHS, where the LHS is the
+      value range of the <code>!OpWillWrap</code> expression, which happens to be the exact inverse of the above so it
+      maps quite cleanly to code.
+    </li>
+  </ul>
+</p>
+<p>
+  Thus, I created the following two patches for the fold:
+  <ul>
+    <li><a href="https://reviews.llvm.org/D154206">D154206</a></li>
+    <li><a href="https://reviews.llvm.org/D154565">D154565</a></li>
+  </ul>
+  The reason that these patches took so long to make is because it took me quite a while to understand the semantics of
+  the fold itself. What helped me a lot was working out the simplifications on paper, then transferring it into code.
+  I got really stuck on the <code>||</code> vs. <code>&&</code> simplification, and then generalizing it to have the
+  same general formula for both also took some time. Overall, the patch for <code>usub_sat</code> took 5 days, whereas
+  the one for <code>uadd_sat</code> took 3 days. However, I learnt a fair bit about writing proofs on Alive2 from this,
+  and also learnt that its probably a good idea to mathematically verify that a transform actually works before
+  transferring it into code and just chucking it on phabricator for review :).
+</p>
+</p>
+            </div>
+
+            <div class="goto-top links">
+                <a href="#container">go to top</a>
+            </div>
+            <br />
+            <div class="embed">
+                <span>GSoC 2023 Week 9 - A Saturating Arithmetic And <code>ICmp</code> Fold</span>
+                <span>Dhruv Chawla</span>
+                <span>08 July 2023</span>
+                <span class="links"><a href="https://dc03.github.io/blog/GSoC_2023_Week_9_2023_07_08.html">https://dc03.github.io/blog/GSoC_2023_Week_9_2023_07_08.html</a></span>
+            </div>
+            <br />
+            <hr class="finish-line" />
+        </div>
+        <script src="../js/scaler.js"></script>
+    </body>
+</html>
