@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "GSoC Week 8 and 9: Taking a break"
-date: 22 August 2022 00:00:00 +0530
+date: 22 August 2022 00:00:01 +0530
 categories: blog
 ---
 
