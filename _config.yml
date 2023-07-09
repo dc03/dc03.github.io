@@ -4,22 +4,20 @@
 # You can create any custom variable you would like, and they will be accessible
 # in the templates via {{ site.myvariable }}.
 
-title: "<mono-head>dc03</mono-head>'s dumpyard"
+title: "dc03"
 description: >- # this means to ignore newlines until "baseurl:"
-  Just a place for me to dump my thoughts
+  Just a place for me to dump my thoughts.
 
-baseurl: "" # the subpath of your site, e.g. /blog
-url: "" # the base hostname & protocol for your site, e.g. http://example.com
-
-github_username:  dc03
-instagram_username: "0xdc03"
-linkedin_username: "0xdc03"
-telegram_username: "dc03x"
+baseurl: "/" # the subpath of your site, e.g. /blog
+url: "https://dc03.github.io" # the base hostname & protocol for your site, e.g. http://example.com
 
 # Build settings
 theme: minima
 plugins:
   - jekyll-feed
+  - jekyll-gist
+  - jekyll-paginate
+  - jekyll-seo-tag
 
 permalink: /:categories/:title_:year_:month_:day.html
 
@@ -29,6 +27,17 @@ kramdown:
   input: GFM
   syntax_highlighter: rouge
 
+sass:
+  sass_dir: _sass
+  style: :compressed
+
+paginate: 10
+
+usernames: 
+ - [github, dc03]
+ - [instagram, "0xdc03"]
+ - [linkedin, "0xdc03"]
+ - [telegram, "dc03x"]
 # Exclude from processing.
 # The following items will not be processed, by default.
 # Any item listed under the `exclude:` key here will be automatically added to

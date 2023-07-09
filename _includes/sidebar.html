@@ -1,0 +1,53 @@
+<div class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      <div class="sidebar-image">
+        <img src="/assets/images/logo.png" style="border-radius: 50%; width: 50%">
+      </div>
+
+      <h1>
+        <a href="{{ site.baseurl }}">
+          {{ site.title }}
+        </a>
+      </h1>
+      <p class="lead">{{ site.description }}</p>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a class="sidebar-nav-item{% if page.url == site.baseurl %} active{% endif %}" href="{{ site.baseurl }}">Home</a>
+
+      {% comment %}
+        The code below dynamically generates a sidebar nav of pages with
+        `layout: page` in the front-matter. See readme for usage.
+      {% endcomment %}
+
+      {% assign pages_list = site.pages %}
+      {% for node in pages_list %}
+        {% if node.title != null %}
+          {% if node.layout == "page" %}
+            <a class="sidebar-nav-item{% if page.url == node.url %} active{% endif %}" href="{{ node.url }}">{{ node.title }}</a>
+          {% endif %}
+        {% endif %}
+      {% endfor %}
+
+    </nav>
+
+    <p>&copy; {{ site.time | date: '%Y' }}. All rights reserved.
+      <br>
+    <span style="font-size: 80%">Built atop <a href="https://github.com/poole/hyde">Hyde</a></span></p>
+
+    <div class="social-links">
+      {% for username in site.usernames %}
+        {% if username[0] == "telegram" %}
+        <a href="https://t.me/{{ username[1] }}">
+        {% elsif username[0] == "linkedin" %}
+        <a href="https://linkedin.com/in/{{ username[1] }}">
+        {% else %}
+        <a href="https://{{ username[0] }}.com/{{ username[1] }}">
+        {% endif %}
+          <img src="/assets/images/{{ username[0] }}.svg">
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+</div>

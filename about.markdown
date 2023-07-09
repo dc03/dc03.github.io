@@ -4,6 +4,10 @@ title: About
 permalink: /about/
 ---
 
+<div style="margin-bottom: 10px; margin-top: 15px">
+  <img src="/assets/images/header.png" style="border-radius: 15px">
+</div>
+
 ## Hi, my name is Dhruv Chawla.
 
 I am a student of the 2020 batch of Information Technology at the Vellore Institute of Technology, Vellore. I primarily write programs using C++, C and Python, though I have experimented with other languages such as Java, JavaScript, TypeScript, Haskell, Scheme, PHP, Assembly (x86_64) and Rust.
@@ -45,7 +49,9 @@ I have worked on a few projects over the past couple of years, they are:
 
 The code editors I use are:
 - CLion
+
 - VSCode
+
 - Vim
 
 <div style="display: flex; width: 100%; justify-content: center">
