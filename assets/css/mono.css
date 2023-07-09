@@ -1,0 +1,9 @@
+mono-head {
+  font-family: monospace;
+  font-size: 80%;
+  backdrop-filter: invert(4%);
+  border: 1px solid lightgray;
+  padding: 2px 6px 2px 6px;
+  border-radius: 6px;
+  margin: 2px;
+}
