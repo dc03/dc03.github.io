@@ -3,7 +3,7 @@ import { Graphviz } from "graphviz-react";
 import React, { useState } from "react";
 import ReactDOM from "react-dom";
 import "./App.css";
-import { Node, Edge, Graph } from "./Graph";
+import { EdgeNode, Edge, EdgeGraph } from "./Graph";
 import { Grapher } from "./Grapher";
 import { ParseError, Parser } from "./Parser";
 import { AST, NodeType } from "./RegexAST";
@@ -52,7 +52,7 @@ function parseRegex(input: string): AST {
     return new Parser(input).parse();
 }
 
-function toGraph(ast: AST): Graph {
+function toGraph(ast: AST): EdgeGraph {
     return new Grapher(ast).toGraph();
 }
 
