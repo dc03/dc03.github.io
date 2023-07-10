@@ -70,11 +70,17 @@ html {
   }
 }
 
-.sidebar-image {
+.sidebar-image-container {
   margin-bottom: 30px;
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+.sidebar-image {
+  width: 50%;
+  height: 50%;
+  border-radius: 50%;
 }
 
 /* Sidebar links */
@@ -119,7 +125,7 @@ a.sidebar-nav-item:focus {
     bottom: 1rem;
     left:   1rem;
   }
-  .sidebar-image {
+  .sidebar-image-container {
     margin-bottom: 15px;
     justify-content: start;
     align-items: end;
@@ -154,7 +160,7 @@ a.sidebar-nav-item:focus {
 }
 
 @media (max-height: 36em) and (orientation: landscape) {
-  .sidebar-image {
+  .sidebar-image-container {
     display: none;
   }
 }

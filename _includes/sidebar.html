@@ -1,8 +1,8 @@
 <div class="sidebar">
   <div class="container sidebar-sticky">
     <div class="sidebar-about">
-      <div class="sidebar-image">
-        <img src="/assets/images/logos/logo.png" style="border-radius: 50%; width: 50%">
+      <div class="sidebar-image-container">
+        <img src="/assets/images/logos/logo.png" class="sidebar-image" alt="Main logo and profile picture, round">
       </div>
 
       <h1>
@@ -39,13 +39,13 @@
     <div class="social-links">
       {% for username in site.usernames %}
         {% if username[0] == "telegram" %}
-        <a href="https://t.me/{{ username[1] }}">
+        <a href="https://t.me/{{ username[1] }}" aria-label="Link to {{ username[0] }} profile">
         {% elsif username[0] == "linkedin" %}
-        <a href="https://linkedin.com/in/{{ username[1] }}">
+        <a href="https://linkedin.com/in/{{ username[1] }}" aria-label="Link to {{ username[0] }} profile">
         {% else %}
-        <a href="https://{{ username[0] }}.com/{{ username[1] }}">
+        <a href="https://{{ username[0] }}.com/{{ username[1] }}" aria-label="Link to {{ username[0] }} profile">
         {% endif %}
-          <img src="/assets/images/social/{{ username[0] }}.svg">
+          <img src="/assets/images/social/{{ username[0] }}.svg" alt="Logo for {{ username[0] }}">
         </a>
       {% endfor %}
     </div>
