@@ -5,7 +5,7 @@ permalink: /about/
 ---
 
 <div style="margin-bottom: 10px; margin-top: 15px">
-  <img src="/assets/images/header.png" style="border-radius: 15px">
+  <img src="/assets/images/logos/header.png" style="border-radius: 15px">
 </div>
 
 ## Hi, my name is Dhruv Chawla.

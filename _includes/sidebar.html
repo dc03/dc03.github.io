@@ -2,11 +2,11 @@
   <div class="container sidebar-sticky">
     <div class="sidebar-about">
       <div class="sidebar-image">
-        <img src="/assets/images/logo.png" style="border-radius: 50%; width: 50%">
+        <img src="/assets/images/logos/logo.png" style="border-radius: 50%; width: 50%">
       </div>
 
       <h1>
-        <a href="{{ site.baseurl }}">
+        <a href="{{ site.baseurl }}index.html">
           {{ site.title }}
         </a>
       </h1>
@@ -14,7 +14,7 @@
     </div>
 
     <nav class="sidebar-nav">
-      <a class="sidebar-nav-item{% if page.url == site.baseurl %} active{% endif %}" href="{{ site.baseurl }}">Home</a>
+      <a class="sidebar-nav-item{% if page.url == site.baseurl %} active{% endif %}" href="{{ site.baseurl }}index.html">Home</a>
 
       {% comment %}
         The code below dynamically generates a sidebar nav of pages with
@@ -45,7 +45,7 @@
         {% else %}
         <a href="https://{{ username[0] }}.com/{{ username[1] }}">
         {% endif %}
-          <img src="/assets/images/{{ username[0] }}.svg">
+          <img src="/assets/images/social/{{ username[0] }}.svg">
         </a>
       {% endfor %}
     </div>
