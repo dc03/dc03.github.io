@@ -448,7 +448,8 @@ a.pagination-item:hover {
 .social-links a img {
   width: 1.5rem;
   height: 1.5rem;
-  filter: invert(50%);
+  /* Generated using https://codepen.io/sosuke/pen/Pjoqqp */
+  filter: brightness(0) saturate(100%) invert(100%) sepia(0%) saturate(6647%) hue-rotate(42deg) brightness(113%) contrast(101%) opacity(50%);
   border-radius: 0;
 }
 
@@ -465,7 +466,6 @@ a.pagination-item:hover {
   .social-links a img {
     width: 1.4rem;
     height: 1.4rem;
-    filter: invert(50%);
     border-radius: 0;
   }
 }
@@ -483,7 +483,6 @@ a.pagination-item:hover {
   .social-links a img {
     width: 1rem;
     height: 1rem;
-    filter: invert(50%);
     border-radius: 0;
   }
 }
