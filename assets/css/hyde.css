@@ -104,10 +104,32 @@ html {
   display: block;
   line-height: 1.75;
 }
+
+.post a,
 a.sidebar-nav-item:hover,
 a.sidebar-nav-item:focus {
   text-decoration: underline;
+  text-underline-offset: 1px;
 }
+.post a:hover,
+.post a:focus {
+  color: #15507a;
+}
+.post a code:hover,
+.post a code:focus {
+  color: #994d55;
+}
+
+.post h1.post-title a {
+  text-decoration: none;
+}
+.post h1.post-title a:hover,
+.post h1.post-title a:focus {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  color: inherit;
+}
+
 .sidebar-nav-item.active {
   font-weight: bold;
 }
