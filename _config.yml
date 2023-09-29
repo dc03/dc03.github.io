@@ -31,7 +31,7 @@ sass:
   sass_dir: _sass
   style: :compressed
 
-paginate: 10
+paginate: 20
 
 usernames: 
  - [github, dc03]

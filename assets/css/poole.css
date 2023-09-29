@@ -343,13 +343,14 @@ tbody tr:nth-child(odd) th {
 .page-title,
 .post-title {
   margin-top: 0;
+  line-height: 1.05;
 }
 
 /* Meta data line below post title */
 .post-date {
   display: block;
-  margin-top: -.5rem;
-  margin-bottom: 1rem;
+  margin-top: -.8rem;
+  margin-bottom: 0.5rem;
   color: #696969;
 }
 
@@ -467,6 +468,13 @@ a.pagination-item:hover {
     width: 1.4rem;
     height: 1.4rem;
     border-radius: 0;
+  }
+
+}
+
+@media (min-width: 64em) and (orientation: landscape) {
+  h1 {
+    font-size: 1.5rem;
   }
 }
 
